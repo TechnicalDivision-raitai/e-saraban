@@ -544,6 +544,11 @@
                 </div>
 
                 <div class="flex items-center gap-2.5 shrink-0">
+                    <button id="syncDriveBtn" type="button" onclick="loadDocumentsFromDrive({ force: true })" title="ซิงค์ข้อมูลล่าสุดจาก Google Drive" class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 text-xs sm:text-sm font-medium transition inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                        <i id="syncDriveIcon" class="fa-solid fa-arrows-rotate text-xs"></i>
+                        <span id="syncDriveLabel" class="hidden md:inline">ซิงค์ข้อมูล</span>
+                    </button>
+
                     <button id="addDocBtn" onclick="openDocumentModal()" class="hidden bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium px-3.5 py-2 rounded-xl shadow-sm transition inline-flex items-center gap-2 whitespace-nowrap shrink-0">
                         <i class="fa-solid fa-plus-circle"></i>
                         <span class="hidden sm:inline">ลงทะเบียนหนังสือใหม่</span>
@@ -1417,7 +1422,9 @@
 
         let documents = [];
         let isLoadingDocuments = true;
+        let lastLoadError = '';
         let activeLoadRequestId = 0;
+        let activeLoadAbortController = null;
         let inFlightLoadPromise = null;
         let lastSheetLoadTime = 0;
         let selectedDocId = null;
@@ -1641,20 +1648,88 @@
             return false;
         }
 
+        function setSyncButtonSpinning(spinning, labelText) {
+            const icon = document.getElementById('syncDriveIcon');
+            const btn = document.getElementById('syncDriveBtn');
+            const label = document.getElementById('syncDriveLabel');
+            if (icon) icon.classList.toggle('fa-spin', Boolean(spinning));
+            if (btn) btn.classList.toggle('text-blue-600', Boolean(spinning));
+            if (label) {
+                if (spinning) {
+                    label.textContent = 'กำลังซิงค์...';
+                } else if (labelText) {
+                    label.textContent = labelText;
+                } else {
+                    label.textContent = documents.length > 0 ? `ซิงค์แล้ว (${documents.length})` : 'ซิงค์ข้อมูล';
+                }
+            }
+        }
+
+        function isPreviewHost() {
+            const host = String(window.location.hostname || '').toLowerCase();
+            return host.endsWith('.run.app') || host === 'localhost' || host === '127.0.0.1';
+        }
+
+        function getDriveRequestUrls(queryString = '') {
+            const sep = GOOGLE_DRIVE_SCRIPT_URL.includes('?') ? '&' : '?';
+            const directUrl = queryString
+                ? `${GOOGLE_DRIVE_SCRIPT_URL}${sep}${queryString}`
+                : GOOGLE_DRIVE_SCRIPT_URL;
+            const proxyUrl = queryString
+                ? `/api/drive-proxy?${queryString}`
+                : '/api/drive-proxy';
+            return isPreviewHost() ? [proxyUrl, directUrl] : [directUrl];
+        }
+
+        async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+            const externalSignal = options.signal;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(new Error('การเชื่อมต่อใช้เวลานานเกินกำหนด')), timeoutMs);
+            if (externalSignal) {
+                if (externalSignal.aborted) {
+                    clearTimeout(timer);
+                    controller.abort(externalSignal.reason);
+                } else {
+                    externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
+                }
+            }
+            try {
+                const isRelative = url.startsWith('/');
+                return await fetch(url, {
+                    ...options,
+                    credentials: isRelative ? 'same-origin' : 'omit',
+                    mode: isRelative ? 'same-origin' : 'cors',
+                    redirect: 'follow',
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
         async function callDriveApi(payload) {
-            const response = await fetch(GOOGLE_DRIVE_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+            const endpoints = getDriveRequestUrls();
+            let lastError = null;
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetchWithTimeout(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(payload)
+                    }, 25000);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const result = await response.json();
+                    if (!result || result.status !== 'success') {
+                        throw new Error(result?.message || 'ไม่สามารถดำเนินการกับ Google Drive ได้');
+                    }
+                    return result;
+                } catch (err) {
+                    lastError = err;
+                }
             }
-            const result = await response.json();
-            if (!result || result.status !== 'success') {
-                throw new Error(result?.message || 'ไม่สามารถดำเนินการกับ Google Drive ได้');
-            }
-            return result;
+            throw lastError || new Error('ไม่สามารถดำเนินการกับ Google Drive ได้');
         }
 
         function parseDriveListPayload(result) {
@@ -1684,7 +1759,16 @@
                 return Promise.resolve();
             }
 
+            if (force && activeLoadAbortController) {
+                try { activeLoadAbortController.abort(); } catch (e) {}
+            }
+
             const requestId = ++activeLoadRequestId;
+            const controller = new AbortController();
+            activeLoadAbortController = controller;
+            lastLoadError = '';
+            setSyncButtonSpinning(true);
+
             if (documents.length === 0) {
                 isLoadingDocuments = true;
                 renderTables();
@@ -1696,34 +1780,55 @@
                         throw new Error('ยังไม่ได้กำหนด URL ของ Google Drive Apps Script');
                     }
 
-                    const separator = GOOGLE_DRIVE_SCRIPT_URL.includes('?') ? '&' : '?';
-                    const response = await fetch(`${GOOGLE_DRIVE_SCRIPT_URL}${separator}action=list&mode=compact&_t=${Date.now()}`, {
-                        cache: 'no-store'
-                    });
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
+                    const endpoints = getDriveRequestUrls(`action=list&mode=compact&_t=${Date.now()}`);
+                    let lastErr = null;
+                    let result = null;
+
+                    for (let i = 0; i < endpoints.length; i++) {
+                        if (controller.signal.aborted || requestId !== activeLoadRequestId) return;
+                        try {
+                            const response = await fetchWithTimeout(endpoints[i], { signal: controller.signal }, 12000);
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}`);
+                            }
+                            const text = await response.text();
+                            try {
+                                result = JSON.parse(text);
+                            } catch (parseErr) {
+                                throw new Error('Invalid JSON response');
+                            }
+                            if (!result || result.status !== 'success') {
+                                throw new Error(result?.message || 'ไม่สามารถดึงข้อมูลจาก Google Drive ได้');
+                            }
+                            lastErr = null;
+                            break;
+                        } catch (attemptErr) {
+                            lastErr = attemptErr;
+                            if (controller.signal.aborted || requestId !== activeLoadRequestId) return;
+                        }
                     }
 
-                    const result = await response.json();
-                    if (!result || result.status !== 'success') {
-                        throw new Error(result?.message || 'ไม่สามารถดึงข้อมูลจาก Google Drive ได้');
-                    }
-
+                    if (lastErr) throw lastErr;
                     if (requestId !== activeLoadRequestId) return;
 
                     documents = parseDriveListPayload(result);
                     isLoadingDocuments = false;
+                    lastLoadError = '';
                     lastSheetLoadTime = Date.now();
                     saveDocumentsToCache(documents);
+                    setSyncButtonSpinning(false, `ซิงค์แล้ว (${documents.length})`);
                     renderAll();
                     requestAnimationFrame(() => {
                         updateStickyTableHeaderOffset();
                         resizeAllCharts();
                     });
                 } catch (err) {
+                    if (controller.signal.aborted && requestId !== activeLoadRequestId) return;
                     console.error('Google Drive connection error:', err);
                     if (requestId === activeLoadRequestId) {
                         isLoadingDocuments = false;
+                        lastLoadError = err?.message || 'ไม่สามารถเชื่อมต่อ Google Drive ได้';
+                        setSyncButtonSpinning(false, 'ซิงค์ไม่สำเร็จ');
                         if (documents.length === 0) renderTables();
                     }
                     if (!silent || documents.length === 0) {
@@ -1731,10 +1836,21 @@
                             icon: 'error',
                             title: 'ไม่สามารถเชื่อมต่อ Google Drive ได้',
                             text: err?.message || 'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง',
-                            confirmButtonText: 'ตกลง'
+                            confirmButtonText: 'ลองใหม่',
+                            showCancelButton: true,
+                            cancelButtonText: 'ปิด'
+                        }).then(res => {
+                            if (res.isConfirmed) loadDocumentsFromDrive({ force: true });
                         });
                     }
                 } finally {
+                    if (activeLoadAbortController === controller) {
+                        activeLoadAbortController = null;
+                    }
+                    if (requestId === activeLoadRequestId) {
+                        const icon = document.getElementById('syncDriveIcon');
+                        if (icon) icon.classList.remove('fa-spin');
+                    }
                     if (inFlightLoadPromise === runFetch) {
                         inFlightLoadPromise = null;
                     }
@@ -2519,6 +2635,9 @@
                 if (isLoadingDocuments && documents.length === 0) {
                     return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-blue-600 mr-2"></i>กำลังโหลดข้อมูลทะเบียนเอกสารจาก Google Drive...</td></tr>`;
                 }
+                if (lastLoadError && documents.length === 0) {
+                    return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-500 space-y-2"><div>ซิงค์ข้อมูลไม่สำเร็จ: ${lastLoadError}</div><button type="button" onclick="loadDocumentsFromDrive({ force: true })" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"><i class="fa-solid fa-arrows-rotate mr-1"></i>ลองซิงค์ข้อมูลใหม่</button></td></tr>`;
+                }
                 return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-400">${emptyText}</td></tr>`;
             };
 
@@ -2887,18 +3006,12 @@
                     const base64String = await fileToBase64(file);
                     const base64Data = base64String.split(',')[1];
 
-                    const response = await fetch(GOOGLE_DRIVE_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'uploadFile',
-                            fileData: base64Data,
-                            mimeType: file.type,
-                            fileName: fileName
-                        })
+                    const result = await callDriveApi({
+                        action: 'uploadFile',
+                        fileData: base64Data,
+                        mimeType: file.type,
+                        fileName: fileName
                     });
-
-                    const result = await response.json();
                     if (result.status === 'success' && result.fileUrl) {
                         fileData = result.fileUrl;
                     } else {
