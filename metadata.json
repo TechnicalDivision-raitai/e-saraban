@@ -1,0 +1,6 @@
+{
+  "name": "e-Saraban กองช่าง อบต.ไร่ใต้",
+  "description": "ระบบจัดการงานสารบรรณและเอกสารภายในกองช่าง (e-Saraban) องค์การบริหารส่วนตำบลไร่ใต้",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
