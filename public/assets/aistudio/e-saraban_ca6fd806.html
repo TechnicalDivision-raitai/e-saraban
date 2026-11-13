@@ -25,9 +25,9 @@
     <!-- SheetJS Library สำหรับอ่านไฟล์ Excel -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-    <!-- Google Sheets Apps Script Backend URL -->
+    <!-- Google Drive Apps Script Backend URL -->
     <script>
-        const GOOGLE_SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbytCN6ZATngKk4QTwUkAYHIcXhBBQ0hvmEvrSzzjZzqjeBvgR2E39fJ-GfW0Ij3nNQnhw/exec';
+        const GOOGLE_DRIVE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
     </script>
 
     <style>
@@ -1413,7 +1413,6 @@
     <!-- ==================== JAVASCRIPT LOGIC ==================== -->
     <script>
         const ADMIN_PASSWORD = "12345";
-        const GOOGLE_SCRIPT_URL = GOOGLE_SHEET_SCRIPT_URL;
         const DOCS_CACHE_KEY = 'esaraban_docs_cache_v1';
 
         let documents = [];
@@ -1642,8 +1641,8 @@
             return false;
         }
 
-        async function callSheetApi(payload) {
-            const response = await fetch(GOOGLE_SHEET_SCRIPT_URL, {
+        async function callDriveApi(payload) {
+            const response = await fetch(GOOGLE_DRIVE_SCRIPT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
@@ -1653,12 +1652,12 @@
             }
             const result = await response.json();
             if (!result || result.status !== 'success') {
-                throw new Error(result?.message || 'ไม่สามารถดำเนินการกับ Google Sheets ได้');
+                throw new Error(result?.message || 'ไม่สามารถดำเนินการกับ Google Drive ได้');
             }
             return result;
         }
 
-        function parseSheetListPayload(result) {
+        function parseDriveListPayload(result) {
             if (result && result.format === 'compact' && Array.isArray(result.headers) && Array.isArray(result.rows)) {
                 const headers = result.headers;
                 return result.rows.map(row => {
@@ -1675,7 +1674,7 @@
             return allRows.map(mapRawRecordToDoc);
         }
 
-        async function loadDocumentsFromSheet(options = {}) {
+        async function loadDocumentsFromDrive(options = {}) {
             const { force = false, silent = false } = options;
 
             if (!force && inFlightLoadPromise) {
@@ -1693,12 +1692,12 @@
 
             const runFetch = (async () => {
                 try {
-                    if (typeof GOOGLE_SHEET_SCRIPT_URL === 'undefined' || !GOOGLE_SHEET_SCRIPT_URL) {
-                        throw new Error('ยังไม่ได้กำหนด URL ของ Google Apps Script');
+                    if (typeof GOOGLE_DRIVE_SCRIPT_URL === 'undefined' || !GOOGLE_DRIVE_SCRIPT_URL) {
+                        throw new Error('ยังไม่ได้กำหนด URL ของ Google Drive Apps Script');
                     }
 
-                    const separator = GOOGLE_SHEET_SCRIPT_URL.includes('?') ? '&' : '?';
-                    const response = await fetch(`${GOOGLE_SHEET_SCRIPT_URL}${separator}action=list&mode=compact&_t=${Date.now()}`, {
+                    const separator = GOOGLE_DRIVE_SCRIPT_URL.includes('?') ? '&' : '?';
+                    const response = await fetch(`${GOOGLE_DRIVE_SCRIPT_URL}${separator}action=list&mode=compact&_t=${Date.now()}`, {
                         cache: 'no-store'
                     });
                     if (!response.ok) {
@@ -1707,12 +1706,12 @@
 
                     const result = await response.json();
                     if (!result || result.status !== 'success') {
-                        throw new Error(result?.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้');
+                        throw new Error(result?.message || 'ไม่สามารถดึงข้อมูลจาก Google Drive ได้');
                     }
 
                     if (requestId !== activeLoadRequestId) return;
 
-                    documents = parseSheetListPayload(result);
+                    documents = parseDriveListPayload(result);
                     isLoadingDocuments = false;
                     lastSheetLoadTime = Date.now();
                     saveDocumentsToCache(documents);
@@ -1722,7 +1721,7 @@
                         resizeAllCharts();
                     });
                 } catch (err) {
-                    console.error('Google Sheets connection error:', err);
+                    console.error('Google Drive connection error:', err);
                     if (requestId === activeLoadRequestId) {
                         isLoadingDocuments = false;
                         if (documents.length === 0) renderTables();
@@ -1730,7 +1729,7 @@
                     if (!silent || documents.length === 0) {
                         Swal.fire({
                             icon: 'error',
-                            title: 'ไม่สามารถเชื่อมต่อ Google Sheets ได้',
+                            title: 'ไม่สามารถเชื่อมต่อ Google Drive ได้',
                             text: err?.message || 'กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง',
                             confirmButtonText: 'ตกลง'
                         });
@@ -1745,7 +1744,6 @@
             inFlightLoadPromise = runFetch;
             return runFetch;
         }
-        const loadDocumentsFromSupabase = loadDocumentsFromSheet;
 
         let currentUser = {
             username: "admin",
@@ -1824,7 +1822,7 @@
             updateUserInterface();
             syncAllFilterGlows();
             const hasCached = hydrateDocumentsFromCache();
-            loadDocumentsFromSheet({ silent: hasCached });
+            loadDocumentsFromDrive({ silent: hasCached });
             toggleFormFields();
 
             if (typeof ResizeObserver !== 'undefined') {
@@ -1860,7 +1858,7 @@
                     document.getElementById('loginScreen').classList.add('hidden');
                     document.getElementById('appContent').classList.remove('hidden');
                     updateUserInterface();
-                    loadDocumentsFromSheet({ silent: documents.length > 0 });
+                    loadDocumentsFromDrive({ silent: documents.length > 0 });
                     requestAnimationFrame(() => {
                         updateStickyTableHeaderOffset();
                         resizeAllCharts();
@@ -1886,7 +1884,7 @@
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('appContent').classList.remove('hidden');
                 updateUserInterface();
-                loadDocumentsFromSheet({ silent: documents.length > 0 });
+                loadDocumentsFromDrive({ silent: documents.length > 0 });
                 requestAnimationFrame(() => {
                     updateStickyTableHeaderOffset();
                     resizeAllCharts();
@@ -2519,7 +2517,7 @@
 
             const getEmptyOrLoadingRow = (colspan, emptyText) => {
                 if (isLoadingDocuments && documents.length === 0) {
-                    return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-blue-600 mr-2"></i>กำลังโหลดข้อมูลทะเบียนเอกสารจาก Google Sheets...</td></tr>`;
+                    return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-blue-600 mr-2"></i>กำลังโหลดข้อมูลทะเบียนเอกสารจาก Google Drive...</td></tr>`;
                 }
                 return `<tr><td colspan="${colspan}" class="p-8 text-center text-slate-400">${emptyText}</td></tr>`;
             };
@@ -2889,7 +2887,7 @@
                     const base64String = await fileToBase64(file);
                     const base64Data = base64String.split(',')[1];
 
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    const response = await fetch(GOOGLE_DRIVE_SCRIPT_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
@@ -2985,14 +2983,14 @@
                 }
 
                 try {
-                    await callSheetApi({
+                    await callDriveApi({
                         action: 'update',
                         id: editId,
                         updates: updatePayload
                     });
-                    Swal.fire('สำเร็จ', 'อัปเดตข้อมูลลง Google Sheets เรียบร้อยแล้ว', 'success');
+                    Swal.fire('สำเร็จ', 'อัปเดตข้อมูลลง Google Drive เรียบร้อยแล้ว', 'success');
                     closeDocumentModal();
-                    loadDocumentsFromSheet({ force: true });
+                    loadDocumentsFromDrive({ force: true });
                 } catch (error) {
                     Swal.fire('เกิดข้อผิดพลาด', error.message, 'error');
                 }
@@ -3032,13 +3030,13 @@
                 };
 
                 try {
-                    await callSheetApi({
+                    await callDriveApi({
                         action: 'insert',
                         record: insertPayload
                     });
-                    Swal.fire('สำเร็จ', 'บันทึกข้อมูลลง Google Sheets เรียบร้อยแล้ว', 'success');
+                    Swal.fire('สำเร็จ', 'บันทึกข้อมูลลง Google Drive เรียบร้อยแล้ว', 'success');
                     closeDocumentModal();
-                    loadDocumentsFromSheet({ force: true });
+                    loadDocumentsFromDrive({ force: true });
                 } catch (error) {
                     Swal.fire('เกิดข้อผิดพลาด', error.message, 'error');
                 }
@@ -3154,7 +3152,7 @@
 
             if (result.value === 'attachment') {
                 try {
-                    await callSheetApi({
+                    await callDriveApi({
                         action: 'update',
                         id: id,
                         updates: { file_name: '', file_url: '' }
@@ -3170,15 +3168,15 @@
             }
 
             try {
-                await callSheetApi({
+                await callDriveApi({
                     action: 'delete',
                     id: id
                 });
                 documents = documents.filter(item => item.id !== id);
                 saveDocumentsToCache(documents);
                 renderAll();
-                loadDocumentsFromSheet({ force: true, silent: true });
-                Swal.fire('ลบสำเร็จ', 'รายการถูกลบออกจาก Google Sheets แล้ว', 'success');
+                loadDocumentsFromDrive({ force: true, silent: true });
+                Swal.fire('ลบสำเร็จ', 'รายการถูกลบออกจากระบบสำรองข้อมูล Google Drive แล้ว', 'success');
             } catch (error) {
                 Swal.fire('เกิดข้อผิดพลาด', error.message, 'error');
             }
@@ -3227,7 +3225,7 @@
                 const ackTimeStr = formatThaiDateTime(now);
 
                 try {
-                    await callSheetApi({
+                    await callDriveApi({
                         action: 'update',
                         id: id,
                         updates: {
@@ -3268,7 +3266,7 @@
             }).then(async (result) => {
                 if (result.isConfirmed && result.value) {
                     try {
-                        await callSheetApi({
+                        await callDriveApi({
                             action: 'update',
                             id: id,
                             updates: { status: result.value }
@@ -3276,7 +3274,7 @@
                         doc.status = result.value;
                         saveDocumentsToCache(documents);
                         renderAll();
-                        loadDocumentsFromSheet({ force: true, silent: true });
+                        loadDocumentsFromDrive({ force: true, silent: true });
                     } catch (error) {
                         Swal.fire('เกิดข้อผิดพลาด', error.message, 'error');
                     }
@@ -3401,18 +3399,18 @@
                         recordsToInsert.push(newDocObj);
                     }
 
-                    await callSheetApi({
+                    await callDriveApi({
                         action: 'insertBatch',
                         records: recordsToInsert
                     });
 
                     event.target.value = '';
-                    loadDocumentsFromSheet({ force: true });
+                    loadDocumentsFromDrive({ force: true });
 
                     Swal.fire({
                         icon: 'success',
                         title: 'นำเข้าข้อมูลสำเร็จ',
-                        text: `นำเข้าข้อมูลลง Google Sheets สำเร็จ ${recordsToInsert.length} รายการ`
+                        text: `นำเข้าข้อมูลลง Google Drive สำเร็จ ${recordsToInsert.length} รายการ`
                     });
 
                 } catch (err) {
