@@ -1,0 +1,1001 @@
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CheckCircle2,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  Paperclip,
+  Pencil,
+  Printer,
+  RefreshCw,
+  Search,
+  Trash2,
+} from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import type { DocType, SarabanDoc, SortState, TabId, UserSession } from '../types/saraban';
+import { TAB_TITLES } from '../types/saraban';
+import {
+  CURRENT_YEAR_FILTER_KEY,
+  formatRegDisplay,
+  formatThaiDate,
+  getAvailableYears,
+  getCurrentBuddhistYear,
+  getCurrentFiscalYear,
+  getCurrentYearForType,
+  getInboxDate,
+  getInboxDateSortValue,
+  getOrderedStatuses,
+  getPartyLabel,
+  isOverdueDoc,
+  matchesCurrentYearByType,
+  matchesDocumentSearch,
+} from '../utils/sarabanUtils';
+import {
+  DocTypeBadge,
+  StatusHighlightBadge,
+  UrgencyHighlightBadge,
+} from './StatusBadges';
+
+export type RegisterTabId = Exclude<TabId, 'dashboard' | 'vouchersSummary'>;
+
+interface RegisterTableViewProps {
+  tabId: RegisterTabId;
+  documents: SarabanDoc[];
+  currentUser: UserSession;
+  isLoading: boolean;
+  loadError: string;
+  selectedDocId: string | number | null;
+  onSelectDoc: (id: string | number) => void;
+  onViewDoc: (doc: SarabanDoc) => void;
+  onEditDoc: (doc: SarabanDoc) => void;
+  onDeleteDoc: (doc: SarabanDoc) => void;
+  onAcknowledgeDoc: (doc: SarabanDoc) => void;
+  onUpdateStatusDoc: (doc: SarabanDoc) => void;
+  onExportCSV: (type: DocType) => void;
+  onImportExcel: (type: DocType, yearStr: string, file: File) => void;
+  onPrintRegisterReport: (title: string, rows: SarabanDoc[], filterLabel: string) => void;
+  onRetrySync: () => void;
+}
+
+export function RegisterTableView({
+  tabId,
+  documents,
+  currentUser,
+  isLoading,
+  loadError,
+  selectedDocId,
+  onSelectDoc,
+  onViewDoc,
+  onEditDoc,
+  onDeleteDoc,
+  onAcknowledgeDoc,
+  onUpdateStatusDoc,
+  onExportCSV,
+  onImportExcel,
+  onPrintRegisterReport,
+  onRetrySync,
+}: RegisterTableViewProps) {
+  const isAdmin = currentUser.role === 'admin' && currentUser.name === 'นิศาชล คงดี';
+
+  const [yearFilterByTab, setYearFilterByTab] = useState<Record<string, string>>({});
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchByTab, setSearchByTab] = useState<Record<string, string>>({});
+  const [sortByTab, setSortByTab] = useState<Record<string, SortState>>({});
+
+  const excelInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentCalendarYear = getCurrentBuddhistYear();
+  const currentFiscalYear = getCurrentFiscalYear();
+  const isFiscalTab = tabId === 'memos' || tabId === 'vouchers';
+  const isMixedTypeTab = tabId === 'allDocs' || tabId === 'myInbox';
+  const anchorYearForTab = isFiscalTab ? currentFiscalYear : currentCalendarYear;
+
+  const defaultYearForTab =
+    tabId === 'forms' || tabId === 'overdue'
+      ? ''
+      : isMixedTypeTab
+      ? CURRENT_YEAR_FILTER_KEY
+      : anchorYearForTab;
+
+  const selectedYear =
+    yearFilterByTab[tabId] !== undefined ? yearFilterByTab[tabId] : defaultYearForTab;
+  const searchQuery = searchByTab[tabId] || '';
+  const sortState = sortByTab[tabId];
+
+  const tabMeta = TAB_TITLES[tabId];
+
+  const baseDocsForTab = useMemo(() => {
+    if (tabId === 'myInbox') {
+      return documents.filter(
+        (d) =>
+          String(d.assignee || '').trim() === currentUser.name &&
+          String(d.status || '').trim() !== 'เสร็จสิ้น'
+      );
+    }
+    if (tabId === 'overdue') {
+      return documents.filter((d) => isOverdueDoc(d));
+    }
+    if (tabId === 'allDocs') {
+      return documents;
+    }
+    return documents.filter((d) => d.type === tabId);
+  }, [documents, tabId, currentUser.name]);
+
+  const availableYears = useMemo(
+    () => getAvailableYears(baseDocsForTab, !isMixedTypeTab, anchorYearForTab),
+    [baseDocsForTab, isMixedTypeTab, anchorYearForTab]
+  );
+
+  const availableStatuses = useMemo(
+    () => getOrderedStatuses(baseDocsForTab),
+    [baseDocsForTab]
+  );
+
+  const filteredAndSortedRows = useMemo(() => {
+    let rows = baseDocsForTab.filter((d) => {
+      if (selectedYear === CURRENT_YEAR_FILTER_KEY) {
+        if (!matchesCurrentYearByType(d)) return false;
+      } else if (selectedYear && String(d.yearStr) !== String(selectedYear)) {
+        return false;
+      }
+      if (tabId === 'myInbox' && statusFilter && d.status !== statusFilter) return false;
+      if (searchQuery && !matchesDocumentSearch(d, searchQuery)) return false;
+      return true;
+    });
+
+    if (sortState) {
+      rows = [...rows].sort((a, b) => {
+        const getVal = (doc: SarabanDoc) => {
+          if (sortState.field === 'date') return getInboxDate(doc);
+          if (sortState.field === 'subject') {
+            return doc.subject || doc.voucherProject || doc.formName || '';
+          }
+          return (doc as unknown as Record<string, unknown>)[sortState.field] ?? '';
+        };
+        const x = getVal(a);
+        const y = getVal(b);
+        const cmp =
+          sortState.field === 'voucherAmount'
+            ? Number(x || 0) - Number(y || 0)
+            : String(x).localeCompare(String(y), 'th', { numeric: true, sensitivity: 'base' });
+        return sortState.direction === 'asc' ? cmp : -cmp;
+      });
+    } else {
+      rows = [...rows];
+      if (tabId === 'incoming') {
+        rows.sort((a, b) => parseInt(String(b.regNo || 0), 10) - parseInt(String(a.regNo || 0), 10));
+      } else if (tabId === 'outgoing' || tabId === 'memos') {
+        rows.sort((a, b) => new Date(b.docDate || 0).getTime() - new Date(a.docDate || 0).getTime());
+      } else if (tabId === 'orders') {
+        rows.sort((a, b) => {
+          const numA = parseInt(String(a.docNumber || '').replace(/[^0-9]/g, ''), 10) || 0;
+          const numB = parseInt(String(b.docNumber || '').replace(/[^0-9]/g, ''), 10) || 0;
+          return numB - numA;
+        });
+      } else if (tabId === 'vouchers') {
+        rows.sort(
+          (a, b) => new Date(b.voucherDate || 0).getTime() - new Date(a.voucherDate || 0).getTime()
+        );
+      } else if (tabId === 'myInbox') {
+        rows.sort(
+          (a, b) =>
+            getInboxDateSortValue(getInboxDate(b)) - getInboxDateSortValue(getInboxDate(a))
+        );
+      }
+    }
+
+    return rows;
+  }, [baseDocsForTab, selectedYear, statusFilter, searchQuery, sortState, tabId]);
+
+  const toggleSort = (field: string) => {
+    setSortByTab((prev) => {
+      const current = prev[tabId];
+      const direction =
+        current?.field === field && current.direction === 'asc' ? 'desc' : 'asc';
+      return { ...prev, [tabId]: { field, direction } };
+    });
+  };
+
+  const renderSortHeader = (label: string, field: string, align: 'left' | 'center' | 'right' = 'left') => {
+    const active = sortState?.field === field;
+    const alignClass =
+      align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start';
+    return (
+      <th
+        className={`p-3.5 sticky top-0 z-20 border-b-2 transition-colors ${
+          tabId === 'overdue'
+            ? active
+              ? 'bg-[#FEE2E2] text-[#7F1D1D] border-[#DC2626]'
+              : 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]'
+            : active
+            ? 'bg-[#E0E7FF] text-[#1E1B4B] border-[#4F46E5]'
+            : 'bg-[#EEF2FF] text-[#1E1B4B] border-[#C7D2FE]'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(field)}
+          className={`w-full inline-flex items-center gap-1.5 font-semibold text-xs ${alignClass} hover:text-[#4338CA]`}
+        >
+          <span>{label}</span>
+          {active ? (
+            sortState.direction === 'asc' ? (
+              <ArrowUp className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <ArrowDown className="w-3.5 h-3.5 shrink-0" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3 h-3 opacity-55 shrink-0" />
+          )}
+        </button>
+      </th>
+    );
+  };
+
+  const renderAttachmentCell = (doc: SarabanDoc) => (
+    <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+      {doc.fileData && doc.fileData.trim() !== '' ? (
+        <a
+          href={doc.fileData}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={doc.fileName || 'เปิดดูไฟล์แนบ'}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-[#4F46E5] bg-[#EEF2FF] hover:bg-[#4338CA] text-[#312E81] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
+        >
+          <Paperclip className="w-3.5 h-3.5" />
+          <span>เปิดไฟล์</span>
+        </a>
+      ) : (
+        <span className="text-slate-300 text-xs">—</span>
+      )}
+    </td>
+  );
+
+  const renderActionCell = (doc: SarabanDoc) => (
+    <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+      <div className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onViewDoc(doc)}
+          title="ดูรายละเอียด / พิมพ์ใบปะหน้า"
+          className="w-8 h-8 rounded-lg border border-[#6366F1] bg-[#EEF2FF] hover:bg-[#4338CA] text-[#3730A3] hover:text-white inline-flex items-center justify-center transition-colors"
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              onClick={() => onEditDoc(doc)}
+              title="แก้ไข"
+              className="w-8 h-8 rounded-lg border border-[#F59E0B] bg-[#FEF3C7] hover:bg-[#D97706] text-[#92400E] hover:text-white inline-flex items-center justify-center transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeleteDoc(doc)}
+              title="ลบ"
+              className="w-8 h-8 rounded-lg border border-[#EF4444] bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white inline-flex items-center justify-center transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+      </div>
+    </td>
+  );
+
+  const canImportExport =
+    tabId === 'incoming' ||
+    tabId === 'outgoing' ||
+    tabId === 'orders' ||
+    tabId === 'memos' ||
+    tabId === 'vouchers';
+
+  const filterSummaryText = [
+    selectedYear === CURRENT_YEAR_FILTER_KEY
+      ? `ปีปัจจุบัน (ปฏิทิน ${currentCalendarYear} / ปีงบฯ ${currentFiscalYear})`
+      : selectedYear
+      ? `${isFiscalTab ? 'ปีงบฯ' : 'ปี'} ${selectedYear}`
+      : 'ทุกปี',
+    statusFilter ? `สถานะ: ${statusFilter}` : '',
+    searchQuery ? `คำค้น: "${searchQuery}"` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const colCountMap: Record<RegisterTabId, number> = {
+    myInbox: 7,
+    incoming: 8,
+    outgoing: 6,
+    orders: 6,
+    memos: 6,
+    forms: 5,
+    vouchers: 7,
+    allDocs: 7,
+    overdue: 7,
+  };
+
+  return (
+    <div className="max-w-[1600px] mx-auto">
+      <div className="bg-white rounded-2xl border-2 border-[#C7D2FE] overflow-hidden">
+        {/* Heading & Filter Bar */}
+        <div className="p-4 sm:p-5 border-b-2 border-[#E0E7FF] bg-[#F8FAFC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-base sm:text-lg font-bold text-[#1E1B4B]">
+                {tabMeta.title}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-lg border border-[#6366F1] bg-[#EEF2FF] text-[#3730A3] text-xs font-bold tabular-nums">
+                {filteredAndSortedRows.length} รายการ
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">{tabMeta.subtitle}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+            {tabId !== 'forms' && tabId !== 'overdue' && (
+              <select
+                value={selectedYear}
+                onChange={(e) =>
+                  setYearFilterByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
+                }
+                aria-label="กรองตามปี"
+                className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-colors focus:outline-none ${
+                  selectedYear
+                    ? 'border-[#4F46E5] bg-[#EEF2FF] text-[#1E1B4B]'
+                    : 'border-slate-300 bg-white text-slate-800 hover:border-[#6366F1]'
+                }`}
+              >
+                {isMixedTypeTab && (
+                  <option value={CURRENT_YEAR_FILTER_KEY}>
+                    ปีปัจจุบัน (ปฏิทิน {currentCalendarYear} / ปีงบฯ {currentFiscalYear})
+                  </option>
+                )}
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>
+                    {isFiscalTab ? `ปีงบฯ ${y}` : `ปี ${y}`}
+                    {!isMixedTypeTab && y === anchorYearForTab ? ' (ปีปัจจุบัน)' : ''}
+                  </option>
+                ))}
+                <option value="">ทุกปี (All Years)</option>
+              </select>
+            )}
+
+            {tabId === 'myInbox' && (
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="กรองตามสถานะ"
+                className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-colors focus:outline-none ${
+                  statusFilter
+                    ? 'border-[#4F46E5] bg-[#EEF2FF] text-[#1E1B4B]'
+                    : 'border-slate-300 bg-white text-slate-800 hover:border-[#6366F1]'
+                }`}
+              >
+                <option value="">ทุกสถานะ</option>
+                {availableStatuses.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {tabId !== 'overdue' && (
+              <div className="relative flex-1 sm:flex-initial min-w-[210px] sm:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) =>
+                    setSearchByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
+                  }
+                  placeholder="ค้นหาเรื่อง, เลขที่, ผู้เกี่ยวข้อง..."
+                  className={`w-full pl-9 pr-3 py-2 rounded-xl text-sm border-2 transition-colors focus:outline-none ${
+                    searchQuery
+                      ? 'border-[#4F46E5] bg-[#EEF2FF] text-[#1E1B4B]'
+                      : 'border-slate-300 bg-white text-slate-800 focus:border-[#4F46E5]'
+                  }`}
+                />
+              </div>
+            )}
+
+            {canImportExport && isAdmin && (
+              <>
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const importYear =
+                        selectedYear && selectedYear !== CURRENT_YEAR_FILTER_KEY
+                          ? selectedYear
+                          : getCurrentYearForType(tabId);
+                      onImportExcel(tabId as DocType, importYear, file);
+                    }
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => excelInputRef.current?.click()}
+                  className="bg-[#5B21B6] hover:bg-[#4C1D95] border-2 border-[#4C1D95] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>นำเข้า Excel</span>
+                </button>
+              </>
+            )}
+
+            {canImportExport && (
+              <button
+                type="button"
+                onClick={() => onExportCSV(tabId as DocType)}
+                className="bg-[#15803D] hover:bg-[#166534] border-2 border-[#166534] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>CSV</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() =>
+                onPrintRegisterReport(tabMeta.title, filteredAndSortedRows, filterSummaryText)
+              }
+              className="bg-[#1E1B4B] hover:bg-[#312E81] border-2 border-[#312E81] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <Printer className="w-4 h-4" />
+              <span>พิมพ์รายงาน A4</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Table Container */}
+        <div className="overflow-auto max-h-[calc(100dvh-16.5rem)] saraban-scroll">
+          <table className="w-full min-w-[960px] text-left border-collapse">
+            <thead>
+              {tabId === 'myInbox' && (
+                <tr>
+                  {renderSortHeader('เลขทะเบียน', 'regNo')}
+                  {renderSortHeader('ประเภท', 'type', 'center')}
+                  {renderSortHeader('วันที่', 'date')}
+                  {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject')}
+                  {renderSortHeader('สถานะงาน / รับทราบ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    การกระทำ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'incoming' && (
+                <tr>
+                  {renderSortHeader('เลขรับกองช่าง', 'regNo')}
+                  {renderSortHeader('เลขรับส่วนกลาง / วันที่', 'centralRegNo')}
+                  {renderSortHeader('เลขที่หนังสือ / ลงวันที่', 'docNumber')}
+                  {renderSortHeader('เรื่อง / ผู้ส่ง', 'subject')}
+                  {renderSortHeader('ความเร่งด่วน', 'urgency', 'center')}
+                  {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'outgoing' && (
+                <tr>
+                  {renderSortHeader('ปีปฏิทิน', 'yearStr')}
+                  {renderSortHeader('เลขที่หนังสือส่ง / วันที่', 'docNumber')}
+                  {renderSortHeader('เรื่อง / ผู้รับ', 'subject')}
+                  {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'orders' && (
+                <tr>
+                  {renderSortHeader('ปีปฏิทิน', 'yearStr')}
+                  {renderSortHeader('เลขที่คำสั่ง / วันที่', 'docNumber')}
+                  {renderSortHeader('เรื่องคำสั่ง', 'subject')}
+                  {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'memos' && (
+                <tr>
+                  {renderSortHeader('ปีงบประมาณ', 'yearStr')}
+                  {renderSortHeader('เลขที่บันทึก / วันที่', 'docNumber')}
+                  {renderSortHeader('งาน / เรียน / เรื่อง', 'subject')}
+                  {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'forms' && (
+                <tr>
+                  {renderSortHeader('งาน', 'memoWork')}
+                  {renderSortHeader('เลขที่แบบ', 'formCode')}
+                  {renderSortHeader('ชื่อแบบฟอร์ม', 'formName')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'vouchers' && (
+                <tr>
+                  {renderSortHeader('ปีงบประมาณ', 'yearStr')}
+                  {renderSortHeader('วันที่จัดทำ', 'voucherDate')}
+                  {renderSortHeader('เลขที่ผู้เบิก / ผู้จัดทำ', 'voucherNo')}
+                  {renderSortHeader('ประเภทฎีกา / ชื่อโครงการ', 'voucherCategory')}
+                  {renderSortHeader('ผู้รับเงิน', 'voucherPayee')}
+                  {renderSortHeader('จำนวนเงิน (บาท)', 'voucherAmount', 'right')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'allDocs' && (
+                <tr>
+                  {renderSortHeader('ประเภท', 'type')}
+                  {renderSortHeader('ปี', 'yearStr', 'center')}
+                  {renderSortHeader('เลขทะเบียน / เลขที่', 'regNo')}
+                  {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject')}
+                  {renderSortHeader('สถานะ', 'status', 'center')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#EEF2FF] text-[#1E1B4B] border-b-2 border-[#C7D2FE] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+
+              {tabId === 'overdue' && (
+                <tr>
+                  {renderSortHeader('ประเภท', 'type')}
+                  {renderSortHeader('เลขทะเบียน', 'regNo')}
+                  {renderSortHeader('เรื่อง', 'subject')}
+                  {renderSortHeader('ผู้รับผิดชอบ', 'assignee')}
+                  {renderSortHeader('กำหนดเสร็จ', 'dueDate')}
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b-2 border-[#FECACA] text-xs font-semibold">
+                    ไฟล์แนบ
+                  </th>
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b-2 border-[#FECACA] text-xs font-semibold">
+                    จัดการ
+                  </th>
+                </tr>
+              )}
+            </thead>
+
+            <tbody className="divide-y divide-slate-200 text-sm">
+              {isLoading && documents.length === 0 ? (
+                <tr>
+                  <td colSpan={colCountMap[tabId]} className="p-10 text-center text-slate-600">
+                    <RefreshCw className="w-5 h-5 animate-spin inline-block mr-2 text-[#4338CA]" />
+                    กำลังโหลดข้อมูลทะเบียนเอกสารจาก Google Drive...
+                  </td>
+                </tr>
+              ) : loadError && documents.length === 0 ? (
+                <tr>
+                  <td colSpan={colCountMap[tabId]} className="p-10 text-center space-y-3">
+                    <div className="text-sm font-semibold text-[#991B1B]">
+                      ซิงค์ข้อมูลไม่สำเร็จ: {loadError}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onRetrySync}
+                      className="px-4 py-2 rounded-xl bg-[#4338CA] text-white text-xs font-semibold hover:bg-[#3730A3] transition-colors"
+                    >
+                      ลองซิงค์ข้อมูลใหม่
+                    </button>
+                  </td>
+                </tr>
+              ) : filteredAndSortedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={colCountMap[tabId]} className="p-10 text-center text-slate-500">
+                    ไม่พบรายการเอกสารตามเงื่อนไขที่เลือก
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedRows.map((d) => {
+                  const isSelected = String(d.id) === String(selectedDocId);
+                  const rowClass = `cursor-pointer transition-colors ${
+                    isSelected
+                      ? 'bg-[#EEF2FF] outline-2 -outline-offset-2 outline-[#4F46E5]'
+                      : tabId === 'overdue'
+                      ? 'hover:bg-[#FEF2F2]'
+                      : 'hover:bg-slate-50'
+                  }`;
+
+                  if (tabId === 'myInbox') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#3730A3] whitespace-nowrap tabular-nums">
+                          {d.type === 'outgoing'
+                            ? d.docNumber || '-'
+                            : d.type === 'vouchers'
+                            ? d.voucherNo || '-'
+                            : formatRegDisplay(d)}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <DocTypeBadge type={d.type} />
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap text-slate-700 tabular-nums">
+                          {formatThaiDate(getInboxDate(d))}
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <div className="font-semibold text-slate-900">
+                            {d.type === 'vouchers' ? d.voucherProject || '-' : d.subject || '-'}
+                          </div>
+                          <div className="text-xs text-slate-500">{getPartyLabel(d)}</div>
+                        </td>
+                        <td
+                          className="p-3.5 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="inline-flex flex-col items-center gap-1.5">
+                            <StatusHighlightBadge status={d.status} />
+                            {d.ackStatus === 'รับทราบแล้ว' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#16A34A] bg-[#DCFCE7] text-[#14532D] text-[11px] font-semibold whitespace-nowrap tabular-nums">
+                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                <span>{d.ackTime && d.ackTime !== '-' ? d.ackTime : 'รับทราบแล้ว'}</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onAcknowledgeDoc(d)}
+                                className="px-2.5 py-1 rounded-lg bg-[#D97706] hover:bg-[#B45309] border border-[#92400E] text-white text-[11px] font-semibold transition-colors whitespace-nowrap"
+                              >
+                                กดรับทราบงาน
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        {renderAttachmentCell(d)}
+                        <td
+                          className="p-3.5 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => onViewDoc(d)}
+                              title="ดูรายละเอียด"
+                              className="w-8 h-8 rounded-lg border border-[#6366F1] bg-[#EEF2FF] text-[#3730A3] hover:bg-[#4338CA] hover:text-white inline-flex items-center justify-center transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateStatusDoc(d)}
+                              className="px-3 py-1.5 rounded-lg bg-[#4338CA] hover:bg-[#3730A3] text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                            >
+                              เปลี่ยนสถานะ
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'incoming') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#3730A3] whitespace-nowrap tabular-nums">
+                          {d.regNo} - {d.yearStr}
+                        </td>
+                        <td className="p-3.5 text-xs whitespace-nowrap">
+                          <div className="font-semibold text-slate-900">{d.centralRegNo || '-'}</div>
+                          <div className="text-slate-500 tabular-nums">
+                            {formatThaiDate(d.receiveDate)}
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-xs whitespace-nowrap">
+                          <div className="font-semibold text-slate-900">{d.docNumber || '-'}</div>
+                          <div className="text-slate-500 tabular-nums">
+                            {formatThaiDate(d.docDate)}
+                          </div>
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <div className="font-semibold text-slate-900">{d.subject || '-'}</div>
+                          <div className="text-xs text-slate-500">ผู้ส่ง: {d.sender || '-'}</div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <UrgencyHighlightBadge urgency={d.urgency} />
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <StatusHighlightBadge status={d.status} />
+                            {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
+                              <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                                {d.ackTime}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'outgoing') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#065F46] whitespace-nowrap tabular-nums">
+                          ปี {d.yearStr}
+                        </td>
+                        <td className="p-3.5 text-xs whitespace-nowrap">
+                          <div className="font-semibold text-slate-900">{d.docNumber || '-'}</div>
+                          <div className="text-slate-500 tabular-nums">
+                            {formatThaiDate(d.docDate)}
+                          </div>
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <div className="font-semibold text-slate-900">{d.subject || '-'}</div>
+                          <div className="text-xs text-slate-500">ผู้รับ: {d.sender || '-'}</div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <StatusHighlightBadge status={d.status} />
+                            {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
+                              <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                                {d.ackTime}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'orders') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#92400E] whitespace-nowrap tabular-nums">
+                          ปี {d.yearStr}
+                        </td>
+                        <td className="p-3.5 text-xs whitespace-nowrap">
+                          <div className="font-semibold text-slate-900">{d.docNumber || '-'}</div>
+                          <div className="text-slate-500 tabular-nums">
+                            {formatThaiDate(d.docDate)}
+                          </div>
+                        </td>
+                        <td className="p-3.5 font-semibold text-slate-900">{d.subject || '-'}</td>
+                        <td className="p-3.5 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <StatusHighlightBadge status={d.status} />
+                            {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
+                              <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                                {d.ackTime}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'memos') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#5B21B6] whitespace-nowrap tabular-nums">
+                          ปีงบฯ {d.yearStr}
+                        </td>
+                        <td className="p-3.5 text-xs whitespace-nowrap">
+                          <div className="font-semibold text-slate-900">{d.docNumber || '-'}</div>
+                          <div className="text-slate-500 tabular-nums">
+                            {formatThaiDate(d.docDate)}
+                          </div>
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <span className="inline-block px-2 py-0.5 rounded-md border border-[#C4B5FD] bg-[#EDE9FE] text-[#4C1D95] text-[11px] font-semibold mb-1">
+                            งาน: {d.memoWork || '-'}
+                          </span>
+                          <div className="font-semibold text-slate-900">
+                            เรียน: {d.sender || '-'}
+                          </div>
+                          <div className="text-xs text-slate-600">เรื่อง: {d.subject || '-'}</div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <StatusHighlightBadge status={d.status} />
+                            {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
+                              <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                                {d.ackTime}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'forms') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#155E75]">{d.memoWork || '-'}</td>
+                        <td className="p-3.5 font-semibold text-slate-900">{d.formCode || '-'}</td>
+                        <td className="p-3.5 text-slate-800">{d.formName || '-'}</td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'vouchers') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5 font-bold text-[#9F1239] whitespace-nowrap tabular-nums">
+                          ปีงบฯ {d.yearStr || '-'}
+                        </td>
+                        <td className="p-3.5 text-xs text-slate-700 whitespace-nowrap tabular-nums">
+                          {formatThaiDate(d.voucherDate)}
+                        </td>
+                        <td className="p-3.5 text-xs">
+                          <div className="font-bold text-[#9F1239]">{d.voucherNo || '-'}</div>
+                          <div className="text-slate-500">
+                            ผู้จัดทำ: {d.voucherMaker || '-'}
+                          </div>
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <span className="inline-block px-2 py-0.5 rounded-md border border-[#FDA4AF] bg-[#FFE4E6] text-[#9F1239] text-[11px] font-semibold mb-1">
+                            {d.voucherCategory || '-'}
+                          </span>
+                          <div className="font-semibold text-slate-900">
+                            {d.voucherProject || '-'}
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-slate-800">{d.voucherPayee || '-'}</td>
+                        <td className="p-3.5 text-right font-bold text-[#3730A3] tabular-nums whitespace-nowrap">
+                          {Number(d.voucherAmount || 0).toLocaleString('th-TH', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  if (tabId === 'overdue') {
+                    return (
+                      <tr
+                        key={String(d.id)}
+                        onClick={() => onSelectDoc(d.id)}
+                        className={rowClass}
+                      >
+                        <td className="p-3.5">
+                          <DocTypeBadge type={d.type} />
+                        </td>
+                        <td className="p-3.5 font-bold text-[#DC2626] whitespace-nowrap tabular-nums">
+                          {formatRegDisplay(d)}
+                        </td>
+                        <td className="p-3.5 font-semibold text-slate-900">
+                          {d.subject || d.voucherProject || '-'}
+                        </td>
+                        <td className="p-3.5 text-slate-700">{d.assignee || '-'}</td>
+                        <td className="p-3.5 font-bold text-[#DC2626] whitespace-nowrap tabular-nums">
+                          {formatThaiDate(d.dueDate)}
+                        </td>
+                        {renderAttachmentCell(d)}
+                        {renderActionCell(d)}
+                      </tr>
+                    );
+                  }
+
+                  // allDocs
+                  return (
+                    <tr
+                      key={String(d.id)}
+                      onClick={() => onSelectDoc(d.id)}
+                      className={rowClass}
+                    >
+                      <td className="p-3.5">
+                        <DocTypeBadge type={d.type} />
+                      </td>
+                      <td className="p-3.5 text-center font-bold text-slate-700 tabular-nums">
+                        {d.yearStr || '-'}
+                      </td>
+                      <td className="p-3.5 font-bold text-[#3730A3] tabular-nums">
+                        {formatRegDisplay(d)}{' '}
+                        <span className="font-normal text-xs text-slate-500">
+                          ({d.docNumber || d.formCode || d.voucherNo || '-'})
+                        </span>
+                      </td>
+                      <td className="p-3.5 max-w-md">
+                        <div className="font-semibold text-slate-900">
+                          {d.subject || d.formName || d.voucherProject || '-'}
+                        </div>
+                        <div className="text-xs text-slate-500">{getPartyLabel(d)}</div>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <div className="inline-flex flex-col items-center gap-1">
+                          <StatusHighlightBadge status={d.status} />
+                          {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
+                            <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                              {d.ackTime}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {renderAttachmentCell(d)}
+                      {renderActionCell(d)}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -8,8 +8,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 3000);
-const GOOGLE_DRIVE_SCRIPT_URL =
+const DEFAULT_GOOGLE_DRIVE_SCRIPT_URL =
+  process.env.APPS_SCRIPT_URL ||
   'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
+
+function resolveSafeScriptUrl(candidate: unknown): string {
+  if (typeof candidate === 'string' && candidate.trim()) {
+    const trimmed = candidate.trim();
+    if (
+      trimmed.startsWith('https://script.google.com/macros/s/') &&
+      trimmed.endsWith('/exec')
+    ) {
+      return trimmed;
+    }
+    throw new Error('URL ของ Google Apps Script ต้องขึ้นต้นด้วย https://script.google.com/macros/s/ และลงท้ายด้วย /exec');
+  }
+  return DEFAULT_GOOGLE_DRIVE_SCRIPT_URL;
+}
 
 async function startServer() {
   const app = express();
@@ -19,9 +34,10 @@ async function startServer() {
 
   app.get('/api/drive-proxy', async (req: Request, res: Response) => {
     try {
-      const target = new URL(GOOGLE_DRIVE_SCRIPT_URL);
+      const baseScriptUrl = resolveSafeScriptUrl(req.header('x-apps-script-url') || req.query._scriptUrl);
+      const target = new URL(baseScriptUrl);
       Object.entries(req.query).forEach(([key, val]) => {
-        if (typeof val === 'string') {
+        if (key !== '_scriptUrl' && typeof val === 'string') {
           target.searchParams.set(key, val);
         }
       });
@@ -41,11 +57,24 @@ async function startServer() {
 
   app.post('/api/drive-proxy', async (req: Request, res: Response) => {
     try {
-      const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
-      const upstream = await fetch(GOOGLE_DRIVE_SCRIPT_URL, {
+      let parsedBody: Record<string, unknown> = {};
+      if (typeof req.body === 'string') {
+        parsedBody = JSON.parse(req.body || '{}') as Record<string, unknown>;
+      } else if (req.body && typeof req.body === 'object') {
+        parsedBody = { ...(req.body as Record<string, unknown>) };
+      }
+
+      const baseScriptUrl = resolveSafeScriptUrl(
+        req.header('x-apps-script-url') || parsedBody._scriptUrl
+      );
+      if ('_scriptUrl' in parsedBody) {
+        delete parsedBody._scriptUrl;
+      }
+
+      const upstream = await fetch(baseScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: bodyStr,
+        body: JSON.stringify(parsedBody),
         redirect: 'follow',
       });
       const text = await upstream.text();

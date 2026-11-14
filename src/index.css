@@ -1,1 +1,71 @@
 @import "tailwindcss";
+
+@layer base {
+  html,
+  body {
+    font-family: 'Kanit', sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+.font-sarabun {
+  font-family: 'Sarabun', sans-serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom subtle scrollbars */
+.saraban-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 70, 229, 0.35) transparent;
+}
+.saraban-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.saraban-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.saraban-scroll::-webkit-scrollbar-thumb {
+  background: rgba(79, 70, 229, 0.35);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.saraban-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(67, 56, 202, 0.65);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Clean A4 / Cover Sheet Print Rules */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only-container {
+    display: block !important;
+    position: static !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
