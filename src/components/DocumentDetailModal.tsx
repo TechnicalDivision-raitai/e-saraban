@@ -86,10 +86,10 @@ export function DocumentDetailModal({
   };
 
   return (
-    <div className="no-print fixed inset-0 z-50 bg-[#1E1B4B]/80 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl border-2 border-[#4338CA] shadow-2xl w-full max-w-2xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
+    <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-2xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
         {/* Header */}
-        <div className="bg-[#312E81] px-5 sm:px-6 py-4 text-white flex items-center justify-between border-b-2 border-[#6366F1] shrink-0">
+        <div className="bg-[#B5B1C8] px-5 sm:px-6 py-4 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0] shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <DocTypeBadge type={doc.type} />
             <h3 className="font-bold text-base sm:text-lg truncate">
@@ -101,7 +101,7 @@ export function DocumentDetailModal({
             disabled={isSavingQuickUpdate}
             onClick={onClose}
             aria-label="ปิดรายละเอียด"
-            className="w-8 h-8 rounded-lg bg-[#1E1B4B] hover:bg-[#4338CA] border border-[#6366F1] flex items-center justify-center shrink-0"
+            className="w-8 h-8 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center shrink-0 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -109,16 +109,16 @@ export function DocumentDetailModal({
 
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 saraban-scroll">
           {/* Highlight Metadata Strip */}
-          <div className="p-4 rounded-xl border-2 border-[#C7D2FE] bg-[#EEF2FF] flex flex-wrap items-center justify-between gap-3">
+          <div className="p-4 rounded-xl border-2 border-[#B5B1C8] bg-[#F5F4F9] flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold text-[#3730A3]">
+              <div className="text-xs font-semibold text-[#574F7D]">
                 {doc.regNo && doc.regNo !== '-'
                   ? 'เลขรับกองช่าง'
                   : doc.type === 'vouchers'
                   ? 'เลขที่ผู้เบิก'
                   : 'เลขที่หนังสือ'}
               </div>
-              <div className="text-lg font-bold text-[#1E1B4B] tabular-nums">
+              <div className="text-lg font-bold text-[#242038] tabular-nums">
                 {doc.regNo && doc.regNo !== '-'
                   ? formatRegDisplay(doc)
                   : doc.voucherNo || doc.docNumber || doc.formCode || '-'}
@@ -211,7 +211,7 @@ export function DocumentDetailModal({
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 block">จำนวนเงินขอเบิก</span>
-                  <span className="font-bold text-[#5B21B6] tabular-nums">
+                  <span className="font-bold text-[#574F7D] tabular-nums">
                     {Number(doc.voucherAmount || 0).toLocaleString('th-TH', {
                       minimumFractionDigits: 2,
                     })}{' '}
@@ -258,14 +258,14 @@ export function DocumentDetailModal({
 
           {/* Admin Quick Assignment + Attachment Update Panel */}
           {isAdmin ? (
-            <div className="p-4 rounded-xl border-2 border-[#4F46E5] bg-[#EEF2FF] space-y-4">
+            <div className="p-4 rounded-xl border-2 border-[#9690B0] bg-[#F5F4F9] space-y-4">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm font-bold text-[#1E1B4B]">
-                  <FileUp className="w-4 h-4 text-[#4338CA]" />
+                <div className="flex items-center gap-2 text-sm font-bold text-[#242038]">
+                  <FileUp className="w-4 h-4 text-[#6B6293]" />
                   <span>มอบหมายงาน / เปลี่ยนสถานะ / แนบไฟล์เพิ่มเติม</span>
                 </div>
                 {hasPendingChanges && (
-                  <span className="px-2 py-0.5 rounded-md border border-[#D97706] bg-[#FEF3C7] text-[#78350F] text-[11px] font-bold">
+                  <span className="px-2 py-0.5 rounded-md border-2 border-[#F59E0B] bg-[#FEF3C7] text-[#78350F] text-[11px] font-bold shadow-[0_0_10px_rgba(245,158,11,0.6),inset_0_0_4px_rgba(252,211,77,0.45)]">
                     มีการแก้ไขที่ยังไม่บันทึก
                   </span>
                 )}
@@ -274,7 +274,7 @@ export function DocumentDetailModal({
               {doc.type !== 'forms' && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-[#1E1B4B] mb-1">
+                    <label className="block text-xs font-bold text-[#242038] mb-1">
                       ผู้รับผิดชอบ
                     </label>
                     <SmartAutocompleteInput
@@ -282,17 +282,17 @@ export function DocumentDetailModal({
                       onChange={setAssignee}
                       suggestions={assigneeSuggestions}
                       placeholder="ระบุชื่อผู้รับผิดชอบ"
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#C7D2FE] focus:border-[#4F46E5] bg-white text-sm focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#1E1B4B] mb-1">
+                    <label className="block text-xs font-bold text-[#242038] mb-1">
                       สถานะดำเนินการ
                     </label>
                     <select
                       value={status}
                       onChange={(e) => setStatus(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#C7D2FE] focus:border-[#4F46E5] bg-white text-sm font-semibold focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm font-semibold focus:outline-none"
                     >
                       {WORKFLOW_STATUSES.map((s) => (
                         <option key={s} value={s}>
@@ -302,14 +302,14 @@ export function DocumentDetailModal({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#1E1B4B] mb-1">
+                    <label className="block text-xs font-bold text-[#242038] mb-1">
                       กำหนดแล้วเสร็จ
                     </label>
                     <input
                       type="date"
                       value={dueDate}
                       onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#C7D2FE] focus:border-[#4F46E5] bg-white text-sm focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                     />
                   </div>
                 </div>
@@ -317,12 +317,12 @@ export function DocumentDetailModal({
 
               <div className="space-y-2.5">
                 {hasExistingAttachment && !removeExistingAttachment && !selectedFile && (
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border-2 border-[#818CF8]">
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border-2 border-[#B5B1C8]">
                     <a
                       href={doc.fileData}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-semibold text-[#3730A3] hover:underline flex items-center gap-2 min-w-0"
+                      className="text-xs font-semibold text-[#574F7D] hover:underline flex items-center gap-2 min-w-0"
                     >
                       <Paperclip className="w-4 h-4 shrink-0" />
                       <span className="truncate">
@@ -334,7 +334,7 @@ export function DocumentDetailModal({
                         href={doc.fileData}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-[#4338CA] hover:bg-[#3730A3] text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1.5 rounded-lg bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>เปิดดู</span>
@@ -374,7 +374,7 @@ export function DocumentDetailModal({
                     const file = e.target.files?.[0] || null;
                     setSelectedFile(file);
                   }}
-                  className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#3730A3] file:text-white hover:file:bg-[#312E81] bg-white rounded-xl border-2 border-[#C7D2FE] p-1.5"
+                  className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border-2 border-[#B5B1C8] p-1.5"
                 />
 
                 {selectedFile && (
@@ -395,9 +395,9 @@ export function DocumentDetailModal({
               </div>
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl border-2 border-slate-200 bg-white flex items-center justify-between gap-3">
+            <div className="p-3.5 rounded-xl border-2 border-[#E2DFEE] bg-white flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0 text-sm">
-                <Paperclip className="w-4 h-4 text-[#4338CA] shrink-0" />
+                <Paperclip className="w-4 h-4 text-[#6B6293] shrink-0" />
                 <span className="font-medium text-slate-700 truncate">
                   ไฟล์แนบ: {doc.fileName || 'ไม่มีเอกสารแนบ'}
                 </span>
@@ -407,7 +407,7 @@ export function DocumentDetailModal({
                   href={doc.fileData}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3.5 py-2 rounded-xl bg-[#4338CA] hover:bg-[#3730A3] text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition-colors"
+                  className="px-3.5 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>เปิดดูไฟล์</span>
@@ -418,12 +418,12 @@ export function DocumentDetailModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-6 py-4 bg-[#F8FAFC] border-t-2 border-[#E0E7FF] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+        <div className="px-5 sm:px-6 py-4 bg-[#F8F7FB] border-t-2 border-[#E2DFEE] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           <button
             type="button"
             disabled={isSavingQuickUpdate}
             onClick={() => onPrintCoverSheet(doc)}
-            className="px-4 py-2 rounded-xl bg-[#1E1B4B] hover:bg-[#312E81] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors"
+            className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors"
           >
             <Printer className="w-4 h-4" />
             <span>พิมพ์ใบปะหน้า</span>

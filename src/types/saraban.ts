@@ -152,42 +152,48 @@ export const DOC_TYPE_META: Record<
     shortLabel: 'รับ',
     description: 'หนังสือจากภายนอกเข้ากองช่าง รันเลขรับอัตโนมัติตามปีปฏิทิน',
     yearKind: 'calendar',
-    badgeClass: 'bg-[#DBEAFE] text-[#1E3A8A] border-[#93C5FD]',
+    badgeClass:
+      'bg-[#DBEAFE] text-[#1E40AF] border-[#3B82F6] shadow-[0_0_12px_rgba(59,130,246,0.6),inset_0_0_6px_rgba(147,197,253,0.45)]',
   },
   outgoing: {
     label: 'หนังสือส่ง',
     shortLabel: 'ส่ง',
     description: 'หนังสือราชการที่กองช่างส่งออกไปยังหน่วยงานภายนอก',
     yearKind: 'calendar',
-    badgeClass: 'bg-[#D1FAE5] text-[#065F46] border-[#6EE7B7]',
+    badgeClass:
+      'bg-[#D1FAE5] text-[#065F46] border-[#10B981] shadow-[0_0_12px_rgba(16,185,129,0.6),inset_0_0_6px_rgba(110,231,183,0.45)]',
   },
   orders: {
     label: 'คำสั่ง',
     shortLabel: 'คำสั่ง',
     description: 'คำสั่ง ประกาศ และมอบหมายปฏิบัติราชการภายในกองช่าง',
     yearKind: 'calendar',
-    badgeClass: 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]',
+    badgeClass:
+      'bg-[#FEF3C7] text-[#92400E] border-[#F59E0B] shadow-[0_0_12px_rgba(245,158,11,0.6),inset_0_0_6px_rgba(252,211,77,0.45)]',
   },
   memos: {
     label: 'บันทึกข้อความ',
     shortLabel: 'บันทึก',
     description: 'บันทึกข้อความภายในและระหว่างกอง แยกตามปีงบประมาณ',
     yearKind: 'fiscal',
-    badgeClass: 'bg-[#EDE9FE] text-[#5B21B6] border-[#C4B5FD]',
+    badgeClass:
+      'bg-[#E0F2FE] text-[#0369A1] border-[#0EA5E9] shadow-[0_0_12px_rgba(14,165,233,0.6),inset_0_0_6px_rgba(125,211,252,0.45)]',
   },
   vouchers: {
     label: 'งานฎีกา',
     shortLabel: 'ฎีกา',
     description: 'เอกสารเบิกจ่ายงบประมาณและโครงการแยกตามปีงบประมาณ',
     yearKind: 'fiscal',
-    badgeClass: 'bg-[#FFE4E6] text-[#9F1239] border-[#FDA4AF]',
+    badgeClass:
+      'bg-[#FFE4E6] text-[#BE123C] border-[#F43F5E] shadow-[0_0_12px_rgba(244,63,94,0.6),inset_0_0_6px_rgba(253,164,175,0.45)]',
   },
   forms: {
     label: 'แบบฟอร์ม',
     shortLabel: 'แบบฟอร์ม',
     description: 'คลังแบบฟอร์มมาตรฐานงานโยธา ประปา และงานธุรการกองช่าง',
     yearKind: 'none',
-    badgeClass: 'bg-[#CFFAFE] text-[#155E75] border-[#67E8F9]',
+    badgeClass:
+      'bg-[#CCFBF1] text-[#0F766E] border-[#14B8A6] shadow-[0_0_12px_rgba(20,184,166,0.6),inset_0_0_6px_rgba(94,234,212,0.45)]',
   },
 };
 

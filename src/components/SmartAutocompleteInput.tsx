@@ -80,7 +80,7 @@ export function SmartAutocompleteInput({
       {showDropdown && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border-2 border-[#4F46E5] rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 saraban-scroll"
+          className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border-2 border-[#6B6293] rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 saraban-scroll"
         >
           {filtered.map((item, idx) => (
             <li key={item}>
@@ -94,8 +94,8 @@ export function SmartAutocompleteInput({
                 }}
                 className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
                   idx === activeIndex
-                    ? 'bg-[#EEF2FF] text-[#1E1B4B] font-semibold'
-                    : 'text-slate-800 hover:bg-[#EEF2FF] hover:text-[#1E1B4B]'
+                    ? 'bg-[#ECEAF4] text-[#242038] font-semibold'
+                    : 'text-slate-800 hover:bg-[#F5F4F9] hover:text-[#242038]'
                 }`}
               >
                 {item}

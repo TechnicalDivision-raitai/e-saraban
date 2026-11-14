@@ -580,7 +580,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#EEF2FF] text-slate-900">
+    <div className="min-h-dvh bg-[#F8F7FB] text-[#242038]">
       {/* Initial Login Gate or Role Switch Modal */}
       {(!isAuthenticated || showRoleModal) && (
         <LoginScreen
@@ -742,7 +742,7 @@ export default function App() {
             success: 'bg-[#DCFCE7] border-[#16A34A] text-[#14532D]',
             error: 'bg-[#FEE2E2] border-[#DC2626] text-[#7F1D1D]',
             warning: 'bg-[#FEF3C7] border-[#D97706] text-[#78350F]',
-            info: 'bg-[#E0E7FF] border-[#4338CA] text-[#1E1B4B]',
+            info: 'bg-[#E0F2FE] border-[#0284C7] text-[#0C4A6E]',
           }[toast.type];
 
           return (

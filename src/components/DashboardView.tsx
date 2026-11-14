@@ -112,13 +112,13 @@ export function DashboardView({
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto">
       {/* Year Filter Banner */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#C7D2FE] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-xl bg-[#3730A3] text-white border-2 border-[#6366F1] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-[#6B6293] text-white border-2 border-[#B5B1C8] flex items-center justify-center shrink-0">
             <CalendarDays className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h2 className="font-bold text-[#1E1B4B] text-sm sm:text-base">
+            <h2 className="font-bold text-[#242038] text-sm sm:text-base">
               กรองภาพรวมข้อมูลสารบรรณตามปี
             </h2>
             <p className="text-xs text-slate-600">
@@ -132,8 +132,8 @@ export function DashboardView({
           aria-label="เลือกปีสำหรับกรองภาพรวมแดชบอร์ด"
           className={`w-full sm:w-auto sm:min-w-[260px] px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors border-2 focus:outline-none ${
             filterYear
-              ? 'border-[#4F46E5] bg-[#EEF2FF] text-[#1E1B4B]'
-              : 'border-slate-300 bg-white text-slate-800 hover:border-[#6366F1]'
+              ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
+              : 'border-[#B5B1C8] bg-white text-slate-800 hover:border-[#9690B0]'
           }`}
         >
           <option value={CURRENT_YEAR_FILTER_KEY}>
@@ -150,13 +150,13 @@ export function DashboardView({
 
       {/* 5 KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4 items-stretch">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#C7D2FE] flex flex-col justify-between">
-          <span className="text-xs font-semibold text-[#312E81]">หนังสือทั้งหมด</span>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col justify-between">
+          <span className="text-xs font-semibold text-[#574F7D]">หนังสือทั้งหมด</span>
           <div className="flex items-end justify-between mt-3">
-            <span className="text-2xl sm:text-3xl font-bold text-[#1E1B4B] tabular-nums">
+            <span className="text-2xl sm:text-3xl font-bold text-[#242038] tabular-nums">
               {stats.total}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#EEF2FF] border border-[#A5B4FC] text-[#3730A3] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#ECEAF4] border border-[#9690B0] text-[#6B6293] flex items-center justify-center shrink-0">
               <Folder className="w-5 h-5" />
             </div>
           </div>
@@ -174,13 +174,13 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#A5B4FC] flex flex-col justify-between">
-          <span className="text-xs font-semibold text-[#312E81]">กำลังดำเนินการ</span>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#60A5FA] flex flex-col justify-between">
+          <span className="text-xs font-semibold text-[#1E40AF]">กำลังดำเนินการ</span>
           <div className="flex items-end justify-between mt-3">
-            <span className="text-2xl sm:text-3xl font-bold text-[#4338CA] tabular-nums">
+            <span className="text-2xl sm:text-3xl font-bold text-[#2563EB] tabular-nums">
               {stats.progress}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#E0E7FF] border border-[#6366F1] text-[#4338CA] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] border border-[#3B82F6] text-[#2563EB] flex items-center justify-center shrink-0">
               <Loader2 className="w-5 h-5" />
             </div>
           </div>
@@ -213,21 +213,21 @@ export function DashboardView({
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 items-stretch">
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#C7D2FE] flex flex-col">
-          <h3 className="font-bold text-[#1E1B4B] mb-4 text-sm">
+        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col">
+          <h3 className="font-bold text-[#242038] mb-4 text-sm">
             สัดส่วนประเภทหนังสือ
           </h3>
           <div className="relative flex-1 min-h-[250px]">
             <DoughnutChart
               labels={['หนังสือรับ', 'หนังสือส่ง', 'คำสั่ง', 'บันทึกข้อความ', 'แบบฟอร์ม', 'งานฎีกา']}
               data={typeCounts}
-              colors={['#3730A3', '#059669', '#D97706', '#7C3AED', '#0891B2', '#E11D48']}
+              colors={['#6B6293', '#10B981', '#F59E0B', '#0EA5E9', '#14B8A6', '#F43F5E']}
             />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#C7D2FE] lg:col-span-2 flex flex-col">
-          <h3 className="font-bold text-[#1E1B4B] mb-4 text-sm">
+        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] lg:col-span-2 flex flex-col">
+          <h3 className="font-bold text-[#242038] mb-4 text-sm">
             ภาพรวมสถานะการทำงาน
           </h3>
           <div className="relative flex-1 min-h-[250px]">
@@ -235,17 +235,17 @@ export function DashboardView({
               labels={['รอดำเนินการ / ลงรับแล้ว', 'กำลังดำเนินการ / เสนอเซนต์', 'ดำเนินการแล้ว / เสร็จสิ้น']}
               datasetLabel="จำนวนหนังสือ"
               data={statusBarCounts}
-              colors={['#D97706', '#4338CA', '#16A34A']}
+              colors={['#F59E0B', '#6B6293', '#16A34A']}
             />
           </div>
         </div>
       </div>
 
       {/* Urgent / Recent Table */}
-      <div className="bg-white rounded-2xl border-2 border-[#C7D2FE] overflow-hidden">
-        <div className="p-4 sm:p-5 border-b-2 border-[#E0E7FF] bg-[#F8FAFC] flex items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl border-2 border-[#B5B1C8] overflow-hidden">
+        <div className="p-4 sm:p-5 border-b-2 border-[#E2DFEE] bg-[#F8F7FB] flex items-center justify-between gap-3">
           <div>
-            <h3 className="font-bold text-[#1E1B4B] text-sm sm:text-base">
+            <h3 className="font-bold text-[#242038] text-sm sm:text-base">
               หนังสือเร่งด่วน / งานล่าสุด
             </h3>
             <p className="text-xs text-slate-500">
@@ -255,7 +255,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={() => onNavigateTab('allDocs')}
-            className="text-xs font-bold text-[#3730A3] hover:text-white bg-[#EEF2FF] hover:bg-[#4338CA] border-2 border-[#6366F1] px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap shrink-0"
+            className="text-xs font-bold text-[#242038] hover:text-white bg-[#ECEAF4] hover:bg-[#6B6293] border-2 border-[#9690B0] hover:border-[#524A75] px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap shrink-0"
           >
             ดูทะเบียนทั้งหมด →
           </button>
@@ -263,7 +263,7 @@ export function DashboardView({
 
         <div className="overflow-x-auto saraban-scroll">
           <table className="w-full min-w-[920px] text-left border-collapse">
-            <thead className="bg-[#EEF2FF] text-xs font-semibold text-[#1E1B4B] border-b-2 border-[#C7D2FE]">
+            <thead className="bg-[#F1EFF7] text-xs font-semibold text-[#242038] border-b-2 border-[#B5B1C8]">
               <tr>
                 <th className="p-3.5">เลขทะเบียน</th>
                 <th className="p-3.5">เรื่อง / ผู้เกี่ยวข้อง</th>
@@ -296,11 +296,11 @@ export function DashboardView({
                       onClick={() => onSelectDoc(d.id)}
                       className={`transition-colors cursor-pointer ${
                         isSelected
-                          ? 'bg-[#EEF2FF] outline-2 -outline-offset-2 outline-[#4F46E5]'
-                          : 'hover:bg-slate-50'
+                          ? 'bg-[#ECEAF4] outline-2 -outline-offset-2 outline-[#6B6293]'
+                          : 'hover:bg-[#F8F7FB]'
                       }`}
                     >
-                      <td className="p-3.5 font-bold text-[#3730A3] whitespace-nowrap tabular-nums">
+                      <td className="p-3.5 font-bold text-[#574F7D] whitespace-nowrap tabular-nums">
                         {formatRegDisplay(d)}
                       </td>
                       <td className="p-3.5 max-w-md">
@@ -327,7 +327,7 @@ export function DashboardView({
                             target="_blank"
                             rel="noopener noreferrer"
                             title={d.fileName || 'เปิดดูไฟล์แนบ'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-[#4F46E5] bg-[#EEF2FF] hover:bg-[#4338CA] text-[#312E81] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-[#9690B0] bg-[#ECEAF4] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
                           >
                             <Paperclip className="w-3.5 h-3.5" />
                             <span>เปิดไฟล์</span>
@@ -342,7 +342,7 @@ export function DashboardView({
                             type="button"
                             onClick={() => onViewDoc(d)}
                             title="ดูรายละเอียดและพิมพ์ใบปะหน้า"
-                            className="w-8 h-8 rounded-lg border border-[#6366F1] bg-[#EEF2FF] hover:bg-[#4338CA] text-[#3730A3] hover:text-white inline-flex items-center justify-center transition-colors"
+                            className="w-8 h-8 rounded-lg border border-[#9690B0] bg-[#ECEAF4] hover:bg-[#6B6293] text-[#242038] hover:text-white inline-flex items-center justify-center transition-colors"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>

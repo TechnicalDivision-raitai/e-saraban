@@ -59,7 +59,7 @@ export function DoughnutChart({ labels, data, colors }: DoughnutChartProps) {
             position: 'bottom',
             labels: {
               font: { family: 'Kanit', size: 12 },
-              color: '#1E1B4B',
+              color: '#2F2A44',
               padding: 12,
               boxWidth: 12,
             },
@@ -122,7 +122,7 @@ export function BarChart({ labels, datasetLabel, data, colors }: BarChartProps) 
           x: {
             ticks: {
               font: { family: 'Kanit', size: 12 },
-              color: '#334155',
+              color: '#2F2A44',
             },
             grid: { display: false },
           },
@@ -130,10 +130,10 @@ export function BarChart({ labels, datasetLabel, data, colors }: BarChartProps) 
             beginAtZero: true,
             ticks: {
               font: { family: 'Kanit', size: 12 },
-              color: '#475569',
+              color: '#4A4369',
             },
             grid: {
-              color: '#E2E8F0',
+              color: '#E6E4F0',
             },
           },
         },
