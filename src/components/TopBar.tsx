@@ -43,7 +43,7 @@ export function TopBar({
           type="button"
           onClick={onOpenMobileMenu}
           aria-label="เปิดเมนู"
-          className="md:hidden w-9 h-9 rounded-xl border border-[#DCD8EB] bg-[#F8F7FB] text-[#242038] flex items-center justify-center shrink-0"
+          className="lg:hidden w-9 h-9 rounded-xl border border-[#DCD8EB] bg-[#F8F7FB] text-[#242038] flex items-center justify-center shrink-0"
         >
           <Menu className="w-4 h-4" />
         </button>
@@ -52,7 +52,7 @@ export function TopBar({
           type="button"
           onClick={onToggleSidebar}
           title="ย่อ/ขยายเมนูข้าง"
-          className="hidden md:inline-flex w-9 h-9 rounded-xl border border-[#DCD8EB] bg-[#F8F7FB] hover:bg-[#ECEAF4] text-[#242038] items-center justify-center transition-colors shrink-0"
+          className="hidden lg:inline-flex w-9 h-9 rounded-xl border border-[#DCD8EB] bg-[#F8F7FB] hover:bg-[#ECEAF4] text-[#242038] items-center justify-center transition-colors shrink-0"
         >
           <PanelLeft className="w-4 h-4" />
         </button>

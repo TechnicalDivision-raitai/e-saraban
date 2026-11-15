@@ -158,6 +158,15 @@ export default function App() {
     });
   };
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const handleViewportChange = () => {
+      setMobileMenuOpen(false);
+    };
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener('change', handleViewportChange);
+  }, []);
+
   const handleLoginAdmin = () => {
     setCurrentUser(ADMIN_USER);
     setIsAuthenticated(true);
@@ -593,13 +602,12 @@ export default function App() {
 
       {/* Main App Shell */}
       {isAuthenticated && (
-        <div className="h-dvh flex flex-col md:flex-row overflow-hidden">
+        <div className="h-dvh flex flex-col lg:flex-row overflow-hidden">
           <Sidebar
             activeTab={activeTab}
             onSelectTab={handleSelectTab}
             currentUser={currentUser}
             collapsed={sidebarCollapsed}
-            onToggleCollapse={handleToggleSidebar}
             mobileOpen={mobileMenuOpen}
             onCloseMobile={() => setMobileMenuOpen(false)}
             myInboxCount={myInboxCount}
@@ -624,7 +632,7 @@ export default function App() {
               onToggleSidebar={handleToggleSidebar}
             />
 
-            <main className="no-print flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 md:p-6 pb-20 md:pb-6 saraban-scroll">
+            <main className="no-print flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 md:p-6 pb-20 lg:pb-6 saraban-scroll">
               {activeTab === 'dashboard' && (
                 <DashboardView
                   documents={documents}
@@ -736,7 +744,7 @@ export default function App() {
       />
 
       {/* In-App Toast Notifications */}
-      <div className="no-print fixed bottom-20 md:bottom-5 right-4 z-[60] flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none">
+      <div className="no-print fixed bottom-20 lg:bottom-5 right-4 z-[60] flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none">
         {toasts.map((toast) => {
           const styleMap = {
             success: 'bg-[#DCFCE7] border-[#16A34A] text-[#14532D]',

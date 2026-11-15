@@ -3,8 +3,6 @@ import {
   ArrowLeftRight,
   BarChart3,
   BookMarked,
-  ChevronsLeft,
-  ChevronsRight,
   FileDown,
   FileSpreadsheet,
   FileText,
@@ -24,7 +22,6 @@ interface SidebarProps {
   onSelectTab: (tab: TabId) => void;
   currentUser: UserSession;
   collapsed: boolean;
-  onToggleCollapse: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
   myInboxCount: number;
@@ -48,7 +45,6 @@ export function Sidebar({
   onSelectTab,
   currentUser,
   collapsed,
-  onToggleCollapse,
   mobileOpen,
   onCloseMobile,
   myInboxCount,
@@ -150,14 +146,18 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop Bright #B5B1C8-Tinted Sidebar */}
+      {/* Desktop Bright #B5B1C8-Tinted Sidebar (hidden automatically on mobile/tablet) */}
       <aside
-        className={`no-print hidden md:flex flex-col bg-[#ECEAF4] text-[#242038] border-r border-[#DCD8EB] shrink-0 transition-all duration-200 ${
+        className={`no-print hidden lg:flex flex-col bg-[#ECEAF4] text-[#242038] border-r border-[#DCD8EB] shrink-0 transition-all duration-200 ${
           collapsed ? 'w-[78px]' : 'w-[264px]'
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 px-4 border-b border-[#A5A0BD] flex items-center justify-between gap-2 shrink-0 bg-[#B5B1C8]">
+        <div
+          className={`h-16 px-4 border-b border-[#A5A0BD] flex items-center gap-2 shrink-0 bg-[#B5B1C8] ${
+            collapsed ? 'justify-center px-2' : ''
+          }`}
+        >
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-white/90 border border-white flex items-center justify-center shrink-0 shadow-xs">
               <BookMarked className="w-4 h-4 text-[#5A5180]" />
@@ -173,18 +173,6 @@ export function Sidebar({
               </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            title={collapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'}
-            className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors shrink-0"
-          >
-            {collapsed ? (
-              <ChevronsRight className="w-4 h-4" />
-            ) : (
-              <ChevronsLeft className="w-4 h-4" />
-            )}
-          </button>
         </div>
 
         {/* User Highlight Frame */}
@@ -265,9 +253,9 @@ export function Sidebar({
         </div>
       </aside>
 
-      {/* Mobile Drawer */}
+      {/* Mobile & Tablet Drawer */}
       {mobileOpen && (
-        <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/50 md:hidden flex">
+        <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/50 lg:hidden flex">
           <div className="w-72 bg-[#ECEAF4] text-[#242038] h-full flex flex-col p-4 space-y-3 border-r border-[#DCD8EB] shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-[#DCD8EB]">
               <div className="flex items-center gap-2.5">
@@ -324,8 +312,8 @@ export function Sidebar({
         </div>
       )}
 
-      {/* Mobile Bottom Nav */}
-      <div className="no-print md:hidden fixed bottom-0 left-0 right-0 bg-[#ECEAF4] border-t border-[#DCD8EB] h-16 flex items-center justify-around px-1 z-40">
+      {/* Mobile & Tablet Bottom Nav */}
+      <div className="no-print lg:hidden fixed bottom-0 left-0 right-0 bg-[#ECEAF4] border-t border-[#DCD8EB] h-16 flex items-center justify-around px-1 z-40">
         {(
           [
             overviewItems[0],
