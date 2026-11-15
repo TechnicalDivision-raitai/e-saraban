@@ -112,9 +112,9 @@ export function DashboardView({
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto">
       {/* Year Filter Banner */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-xl bg-[#6B6293] text-white border-2 border-[#B5B1C8] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-[#6B6293] text-white border border-[#524A75] flex items-center justify-center shrink-0">
             <CalendarDays className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -130,10 +130,10 @@ export function DashboardView({
           value={filterYear}
           onChange={(e) => setFilterYear(e.target.value)}
           aria-label="เลือกปีสำหรับกรองภาพรวมแดชบอร์ด"
-          className={`w-full sm:w-auto sm:min-w-[260px] px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors border-2 focus:outline-none ${
+          className={`w-full sm:w-auto sm:min-w-[260px] px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors border focus:outline-none ${
             filterYear
-              ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
-              : 'border-[#B5B1C8] bg-white text-slate-800 hover:border-[#9690B0]'
+              ? 'border-[#B5B1C8] bg-[#FAF9FC] text-[#242038]'
+              : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
           }`}
         >
           <option value={CURRENT_YEAR_FILTER_KEY}>
@@ -150,61 +150,61 @@ export function DashboardView({
 
       {/* 5 KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4 items-stretch">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_18px_rgba(36,32,56,0.05)] flex flex-col justify-between">
           <span className="text-xs font-semibold text-[#574F7D]">หนังสือทั้งหมด</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#242038] tabular-nums">
               {stats.total}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#ECEAF4] border border-[#9690B0] text-[#6B6293] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#F1EFF7] border border-[#E2DFEE] text-[#6B6293] flex items-center justify-center shrink-0">
               <Folder className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#FCD34D] flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#FDE68A] shadow-[0_4px_18px_rgba(245,158,11,0.08)] flex flex-col justify-between">
           <span className="text-xs font-semibold text-[#78350F]">รอรับทราบ</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#B45309] tabular-nums">
               {stats.pending}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] border border-[#F59E0B] text-[#B45309] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#FEF3C7]/70 border border-[#FDE68A] text-[#B45309] flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#60A5FA] flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#BFDBFE] shadow-[0_4px_18px_rgba(59,130,246,0.08)] flex flex-col justify-between">
           <span className="text-xs font-semibold text-[#1E40AF]">กำลังดำเนินการ</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#2563EB] tabular-nums">
               {stats.progress}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] border border-[#3B82F6] text-[#2563EB] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#DBEAFE]/70 border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center shrink-0">
               <Loader2 className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#86EFAC] flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#A7F3D0] shadow-[0_4px_18px_rgba(16,185,129,0.08)] flex flex-col justify-between">
           <span className="text-xs font-semibold text-[#14532D]">เสร็จสิ้นแล้ว</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#15803D] tabular-nums">
               {stats.done}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] border border-[#22C55E] text-[#15803D] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#DCFCE7]/70 border border-[#A7F3D0] text-[#15803D] flex items-center justify-center shrink-0">
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#FCA5A5] flex flex-col justify-between col-span-2 sm:col-span-1">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#FECACA] shadow-[0_4px_18px_rgba(239,68,68,0.08)] flex flex-col justify-between col-span-2 sm:col-span-1">
           <span className="text-xs font-semibold text-[#7F1D1D]">เกินกำหนดส่ง</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#DC2626] tabular-nums">
               {stats.overdue}
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#FEE2E2] border border-[#EF4444] text-[#DC2626] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#FEE2E2]/70 border border-[#FECACA] text-[#DC2626] flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5" />
             </div>
           </div>
@@ -213,7 +213,7 @@ export function DashboardView({
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 items-stretch">
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col">
+        <div className="bg-white p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] flex flex-col">
           <h3 className="font-bold text-[#242038] mb-4 text-sm">
             สัดส่วนประเภทหนังสือ
           </h3>
@@ -226,7 +226,7 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] lg:col-span-2 flex flex-col">
+        <div className="bg-white p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] lg:col-span-2 flex flex-col">
           <h3 className="font-bold text-[#242038] mb-4 text-sm">
             ภาพรวมสถานะการทำงาน
           </h3>
@@ -242,8 +242,8 @@ export function DashboardView({
       </div>
 
       {/* Urgent / Recent Table */}
-      <div className="bg-white rounded-2xl border-2 border-[#B5B1C8] overflow-hidden">
-        <div className="p-4 sm:p-5 border-b-2 border-[#E2DFEE] bg-[#F8F7FB] flex items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-[#242038] text-sm sm:text-base">
               หนังสือเร่งด่วน / งานล่าสุด
@@ -255,7 +255,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={() => onNavigateTab('allDocs')}
-            className="text-xs font-bold text-[#242038] hover:text-white bg-[#ECEAF4] hover:bg-[#6B6293] border-2 border-[#9690B0] hover:border-[#524A75] px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap shrink-0"
+            className="text-xs font-bold text-[#4A4173] hover:text-white bg-[#F1EFF7] hover:bg-[#6B6293] border border-[#C9C4DC] hover:border-[#524A75] px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap shrink-0"
           >
             ดูทะเบียนทั้งหมด →
           </button>
@@ -263,7 +263,7 @@ export function DashboardView({
 
         <div className="overflow-x-auto saraban-scroll">
           <table className="w-full min-w-[920px] text-left border-collapse">
-            <thead className="bg-[#F1EFF7] text-xs font-semibold text-[#242038] border-b-2 border-[#B5B1C8]">
+            <thead className="bg-[#F6F4FA] text-xs font-semibold text-[#242038] border-b border-[#E5E2F0]">
               <tr>
                 <th className="p-3.5">เลขทะเบียน</th>
                 <th className="p-3.5">เรื่อง / ผู้เกี่ยวข้อง</th>
@@ -274,7 +274,7 @@ export function DashboardView({
                 <th className="p-3.5 text-center">จัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 text-sm">
+            <tbody className="divide-y divide-[#F0EEF6] text-sm">
               {isLoading && documents.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-slate-600">
@@ -327,7 +327,7 @@ export function DashboardView({
                             target="_blank"
                             rel="noopener noreferrer"
                             title={d.fileName || 'เปิดดูไฟล์แนบ'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-[#9690B0] bg-[#ECEAF4] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#C9C4DC] bg-[#F1EFF7] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
                           >
                             <Paperclip className="w-3.5 h-3.5" />
                             <span>เปิดไฟล์</span>

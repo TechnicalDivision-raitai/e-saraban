@@ -62,9 +62,9 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto">
       {/* Year Filter */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 rounded-xl bg-[#6B6293] text-white border-2 border-[#B5B1C8] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-[#6B6293] text-white border border-[#524A75] flex items-center justify-center shrink-0">
             <Filter className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -80,10 +80,10 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
           value={summaryYear}
           onChange={(e) => setSummaryYear(e.target.value)}
           aria-label="กรองปีงบประมาณงานฎีกา"
-          className={`w-full sm:w-60 px-3.5 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors focus:outline-none ${
+          className={`w-full sm:w-60 px-3.5 py-2.5 rounded-xl text-sm font-semibold border transition-colors focus:outline-none ${
             summaryYear
-              ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
-              : 'border-[#B5B1C8] bg-white text-slate-800 hover:border-[#9690B0]'
+              ? 'border-[#B5B1C8] bg-[#FAF9FC] text-[#242038]'
+              : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
           }`}
         >
           {years.map((y) => (
@@ -98,19 +98,19 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col justify-between">
+        <div className="bg-white p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_18px_rgba(36,32,56,0.05)] flex flex-col justify-between">
           <span className="text-xs font-semibold text-[#574F7D]">จำนวนฎีกาทั้งหมด</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-3xl font-bold text-[#242038] tabular-nums">
               {filteredVouchers.length}
             </span>
-            <div className="w-11 h-11 rounded-xl bg-[#ECEAF4] border border-[#9690B0] text-[#6B6293] flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-[#F1EFF7] border border-[#E2DFEE] text-[#6B6293] flex items-center justify-center shrink-0">
               <Receipt className="w-5 h-5" />
             </div>
           </div>
         </div>
 
-        <div className="bg-[#ECEAF4] p-5 rounded-2xl border-2 border-[#6B6293] text-[#242038] flex flex-col justify-between md:col-span-2">
+        <div className="bg-[#F6F4FA] p-5 rounded-2xl border border-[#C9C4DC] shadow-[0_4px_18px_rgba(107,98,147,0.08)] text-[#242038] flex flex-col justify-between md:col-span-2">
           <span className="text-xs font-bold text-[#574F7D]">ยอดเงินขอเบิกรวมทั้งหมด</span>
           <div className="flex items-end justify-between mt-3">
             <span className="text-2xl sm:text-3xl font-bold text-[#242038] tabular-nums">
@@ -125,7 +125,7 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 items-stretch">
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] flex flex-col">
+        <div className="bg-white p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] flex flex-col">
           <h3 className="font-bold text-[#242038] mb-4 text-sm">
             สัดส่วนประเภทฎีกา (จำนวนรายการ)
           </h3>
@@ -138,7 +138,7 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border-2 border-[#B5B1C8] lg:col-span-2 flex flex-col">
+        <div className="bg-white p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] lg:col-span-2 flex flex-col">
           <h3 className="font-bold text-[#242038] mb-4 text-sm">
             ยอดเงินขอเบิกแยกตามประเภทฎีกา (บาท)
           </h3>
@@ -155,22 +155,22 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
 
       {/* Summary + Recent Tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-stretch">
-        <div className="bg-white rounded-2xl border-2 border-[#B5B1C8] overflow-hidden flex flex-col">
-          <div className="p-4 sm:p-5 border-b-2 border-[#E2DFEE] bg-[#F8F7FB]">
+        <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden flex flex-col">
+          <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC]">
             <h3 className="font-bold text-[#242038] text-sm sm:text-base">
               สรุปยอดเงินแยกตามประเภทฎีกา
             </h3>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse">
-              <thead className="bg-[#F1EFF7] text-xs font-semibold text-[#242038] border-b border-[#B5B1C8]">
+              <thead className="bg-[#F6F4FA] text-xs font-semibold text-[#242038] border-b border-[#E5E2F0]">
                 <tr>
                   <th className="p-3.5">ประเภทฎีกา</th>
                   <th className="p-3.5 text-center">จำนวน</th>
                   <th className="p-3.5 text-right">ยอดเงินรวม (บาท)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 text-sm">
+              <tbody className="divide-y divide-[#F0EEF6] text-sm">
                 {categoryRows.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="p-8 text-center text-slate-400">
@@ -195,22 +195,22 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border-2 border-[#B5B1C8] overflow-hidden flex flex-col">
-          <div className="p-4 sm:p-5 border-b-2 border-[#E2DFEE] bg-[#F8F7FB]">
+        <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden flex flex-col">
+          <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC]">
             <h3 className="font-bold text-[#242038] text-sm sm:text-base">
               รายการงานฎีกาล่าสุด
             </h3>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse">
-              <thead className="bg-[#F1EFF7] text-xs font-semibold text-[#242038] border-b border-[#B5B1C8]">
+              <thead className="bg-[#F6F4FA] text-xs font-semibold text-[#242038] border-b border-[#E5E2F0]">
                 <tr>
                   <th className="p-3.5">เลขผู้เบิก</th>
                   <th className="p-3.5">โครงการ / ผู้รับเงิน</th>
                   <th className="p-3.5 text-right">จำนวนเงิน (บาท)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 text-sm">
+              <tbody className="divide-y divide-[#F0EEF6] text-sm">
                 {filteredVouchers.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="p-8 text-center text-slate-400">

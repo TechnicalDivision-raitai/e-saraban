@@ -20,9 +20,9 @@ export function CoverSheetPrintModal({ doc, onClose }: CoverSheetPrintModalProps
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2F2A44]/60 flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:static print:bg-white print:p-0">
-      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-3xl overflow-hidden my-auto print-only-container">
+      <div className="bg-white rounded-2xl border border-white/85 ring-1 ring-[#C9C4DC]/60 shadow-2xl w-full max-w-3xl overflow-hidden my-auto print-only-container">
         {/* Toolbar (hidden on print) */}
-        <div className="no-print bg-[#B5B1C8] px-5 py-3.5 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0]">
+        <div className="no-print bg-[#B5B1C8] px-5 py-3.5 text-[#242038] flex items-center justify-between border-none">
           <div className="font-bold text-sm sm:text-base">
             ตัวอย่างใบปะหน้าหนังสือราชการ (A4)
           </div>
@@ -30,7 +30,7 @@ export function CoverSheetPrintModal({ doc, onClose }: CoverSheetPrintModalProps
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
             >
               <Printer className="w-4 h-4" />
               <span>สั่งพิมพ์ / บันทึก PDF</span>
@@ -39,7 +39,7 @@ export function CoverSheetPrintModal({ doc, onClose }: CoverSheetPrintModalProps
               type="button"
               onClick={onClose}
               aria-label="ปิดตัวอย่างใบปะหน้า"
-              className="w-8 h-8 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -169,8 +169,8 @@ export function RegisterReportPrintModal({ report, onClose }: RegisterReportPrin
 
   return (
     <div className="fixed inset-0 z-50 bg-[#2F2A44]/60 flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:static print:bg-white print:p-0">
-      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-5xl overflow-hidden my-auto print-only-container">
-        <div className="no-print bg-[#B5B1C8] px-5 py-3.5 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0]">
+      <div className="bg-white rounded-2xl border border-white/85 ring-1 ring-[#C9C4DC]/60 shadow-2xl w-full max-w-5xl overflow-hidden my-auto print-only-container">
+        <div className="no-print bg-[#B5B1C8] px-5 py-3.5 text-[#242038] flex items-center justify-between border-none">
           <div className="font-bold text-sm sm:text-base">
             ตัวอย่างรายงานทะเบียนเอกสาร A4 ({report.rows.length} รายการ)
           </div>
@@ -178,7 +178,7 @@ export function RegisterReportPrintModal({ report, onClose }: RegisterReportPrin
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5"
             >
               <Printer className="w-4 h-4" />
               <span>สั่งพิมพ์รายงาน A4</span>
@@ -187,7 +187,7 @@ export function RegisterReportPrintModal({ report, onClose }: RegisterReportPrin
               type="button"
               onClick={onClose}
               aria-label="ปิดรายงาน"
-              className="w-8 h-8 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

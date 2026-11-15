@@ -344,9 +344,9 @@ export function DocumentWizardModal({
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-3xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
+      <div className="bg-white rounded-2xl border border-white/85 ring-1 ring-[#C9C4DC]/60 shadow-2xl w-full max-w-3xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
         {/* Bright #B5B1C8 Signature Header */}
-        <div className="bg-[#B5B1C8] px-5 sm:px-6 py-4 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0] shrink-0">
+        <div className="bg-[#B5B1C8] px-5 sm:px-6 py-4 text-[#242038] flex items-center justify-between border-none shrink-0">
           <div>
             <h3 className="font-bold text-base sm:text-lg">
               {editingDoc ? 'แก้ไขข้อมูลทะเบียนเอกสาร' : 'ลงทะเบียนหนังสือใหม่'}
@@ -360,14 +360,14 @@ export function DocumentWizardModal({
             onClick={onClose}
             disabled={isSubmitting}
             aria-label="ปิดหน้าต่าง"
-            className="w-9 h-9 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* 3-Step Indicator Bar */}
-        <div className="px-5 sm:px-6 py-3 bg-[#F5F4F9] border-b-2 border-[#B5B1C8] grid grid-cols-3 gap-2 shrink-0">
+        <div className="px-5 sm:px-6 py-3 bg-[#FAF9FC] border-b border-[#ECEAF4] grid grid-cols-3 gap-2 shrink-0">
           {stepLabels.map((item) => {
             const isCurrent = step === item.num;
             const isDone = step > item.num;
@@ -383,12 +383,12 @@ export function DocumentWizardModal({
                     setStep(item.num);
                   }
                 }}
-                className={`px-3 py-2 rounded-xl border-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap truncate ${
+                className={`px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap truncate ${
                   isCurrent
                     ? 'bg-[#6B6293] border-[#524A75] text-white shadow-xs'
                     : isDone
-                    ? 'bg-[#DCFCE7] border-[#16A34A] text-[#14532D]'
-                    : 'bg-white border-[#B5B1C8] text-slate-500'
+                    ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#14532D]'
+                    : 'bg-white border-[#E2DFEE] text-slate-500'
                 }`}
               >
                 {isDone && <Check className="w-3.5 h-3.5 shrink-0" />}
@@ -401,7 +401,7 @@ export function DocumentWizardModal({
         <form onSubmit={handleFinalSubmit} className="flex-1 flex flex-col min-h-0">
           <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 saraban-scroll">
             {stepError && (
-              <div className="px-4 py-3 rounded-xl border-2 border-[#DC2626] bg-[#FEE2E2] text-[#7F1D1D] text-sm font-semibold">
+              <div className="px-4 py-3 rounded-xl border border-[#FCA5A5] bg-[#FEE2E2] text-[#7F1D1D] text-sm font-semibold">
                 {stepError}
               </div>
             )}
@@ -422,15 +422,15 @@ export function DocumentWizardModal({
                           key={t}
                           type="button"
                           onClick={() => handleSelectType(t)}
-                          className={`p-3.5 rounded-xl border-2 text-left transition-colors flex flex-col justify-between gap-2 ${
+                          className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-2 ${
                             active
-                              ? 'border-[#6B6293] bg-[#ECEAF4] ring-2 ring-[#B5B1C8]'
-                              : 'border-[#B5B1C8] bg-white hover:border-[#9690B0] hover:bg-[#F8F7FB]'
+                              ? 'border-[#6B6293] bg-[#F5F4FA] shadow-[0_0_12px_rgba(107,98,147,0.22)]'
+                              : 'border-[#E5E2F0] bg-white hover:border-[#B5B1C8] hover:bg-[#FAF9FC]'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span
-                              className={`px-2.5 py-0.5 rounded-md border-2 text-xs font-bold ${meta.badgeClass}`}
+                              className={`px-2.5 py-0.5 rounded-md border text-xs font-bold ${meta.badgeClass}`}
                             >
                               {meta.label}
                             </span>
@@ -458,7 +458,7 @@ export function DocumentWizardModal({
                       <select
                         value={yearStr}
                         onChange={(e) => setYearStr(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#6B6293] bg-[#F5F4F9] text-[#242038] text-sm font-bold focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] bg-[#FAF9FC] text-[#242038] text-sm font-bold focus:outline-none focus:border-[#6B6293]"
                       >
                         {yearOptions.map((y) => (
                           <option key={y} value={y}>
@@ -470,7 +470,7 @@ export function DocumentWizardModal({
                     </div>
 
                     {docType === 'incoming' && (
-                      <div className="p-3.5 rounded-xl border-2 border-[#9690B0] bg-[#F5F4F9] flex items-center justify-between gap-3">
+                      <div className="p-3.5 rounded-xl border border-[#DCD8EB] bg-[#FAF9FC] flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-xs font-bold text-[#242038]">
                             เลขรับกองช่าง (รันอัตโนมัติ)
@@ -492,7 +492,7 @@ export function DocumentWizardModal({
             {/* STEP 2 */}
             {step === 2 && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-xl border-2 border-[#B5B1C8] bg-[#F5F4F9]">
+                <div className="flex items-center justify-between p-3 rounded-xl border border-[#E5E2F0] bg-[#FAF9FC]">
                   <div className="text-xs font-bold text-[#242038]">
                     กำลังกรอกข้อมูล: {typeMeta.label}{' '}
                     {typeMeta.yearKind !== 'none' ? `(${yearStr})` : ''}
@@ -516,7 +516,7 @@ export function DocumentWizardModal({
                           value={centralRegNo}
                           onChange={(e) => setCentralRegNo(e.target.value)}
                           placeholder="เช่น รับกลาง-102/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -530,7 +530,7 @@ export function DocumentWizardModal({
                             setReceiveDate(e.target.value);
                             if (!docDate) setDocDate(e.target.value);
                           }}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -545,7 +545,7 @@ export function DocumentWizardModal({
                           onChange={setSender}
                           suggestions={suggestions.incomingSenders}
                           placeholder="เช่น อำเภอพิบูลมังสาหาร"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -555,7 +555,7 @@ export function DocumentWizardModal({
                         <select
                           value={urgency}
                           onChange={(e) => setUrgency(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm bg-white focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm bg-white focus:outline-none"
                         >
                           {URGENCY_LEVELS.map((u) => (
                             <option key={u} value={u}>
@@ -576,7 +576,7 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น อบ 0023.23/ว 36"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -587,7 +587,7 @@ export function DocumentWizardModal({
                           type="date"
                           value={docDate}
                           onChange={(e) => setDocDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -601,7 +601,7 @@ export function DocumentWizardModal({
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="ระบุเรื่องหนังสือ"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -619,7 +619,7 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น อบ 0023.23/12"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -630,7 +630,7 @@ export function DocumentWizardModal({
                           type="date"
                           value={docDate}
                           onChange={(e) => setDocDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -643,7 +643,7 @@ export function DocumentWizardModal({
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="ระบุเรื่องหนังสือส่ง"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                     <div>
@@ -655,7 +655,7 @@ export function DocumentWizardModal({
                         onChange={setSender}
                         suggestions={suggestions.outgoingRecipients}
                         placeholder="เช่น ท้องถิ่นจังหวัดอุบลราชธานี"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -673,7 +673,7 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น ที่ 5/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -684,7 +684,7 @@ export function DocumentWizardModal({
                           type="date"
                           value={docDate}
                           onChange={(e) => setDocDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -697,7 +697,7 @@ export function DocumentWizardModal({
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="ระบุเรื่องคำสั่ง"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -715,7 +715,7 @@ export function DocumentWizardModal({
                           value={memoWork}
                           onChange={(e) => setMemoWork(e.target.value)}
                           placeholder="เช่น งานโยธา, งานธุรการ"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -727,7 +727,7 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น วส 001/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -740,7 +740,7 @@ export function DocumentWizardModal({
                           type="date"
                           value={docDate}
                           onChange={(e) => setDocDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -752,7 +752,7 @@ export function DocumentWizardModal({
                           onChange={setSender}
                           suggestions={suggestions.memoAddressees}
                           placeholder="เช่น นายกองค์การบริหารส่วนตำบลไร่ใต้"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -765,7 +765,7 @@ export function DocumentWizardModal({
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder="ระบุเรื่องบันทึกข้อความ"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -783,7 +783,7 @@ export function DocumentWizardModal({
                           value={memoWork}
                           onChange={(e) => setMemoWork(e.target.value)}
                           placeholder="เช่น งานโยธา, งานประปา"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -795,7 +795,7 @@ export function DocumentWizardModal({
                           value={formCode}
                           onChange={(e) => setFormCode(e.target.value)}
                           placeholder="เช่น แบบ ปร.1"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -808,7 +808,7 @@ export function DocumentWizardModal({
                         value={formName}
                         onChange={(e) => setFormName(e.target.value)}
                         placeholder="ระบุชื่อแบบฟอร์มเอกสาร"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -825,7 +825,7 @@ export function DocumentWizardModal({
                           type="date"
                           value={voucherDate}
                           onChange={(e) => setVoucherDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -837,7 +837,7 @@ export function DocumentWizardModal({
                           onChange={setVoucherMaker}
                           suggestions={suggestions.voucherMakers}
                           placeholder="ระบุชื่อผู้จัดทำฎีกา"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -852,7 +852,7 @@ export function DocumentWizardModal({
                           value={voucherNo}
                           onChange={(e) => setVoucherNo(e.target.value)}
                           placeholder="เช่น ฎีกาที่ 12/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -864,7 +864,7 @@ export function DocumentWizardModal({
                           onChange={setVoucherCategory}
                           suggestions={suggestions.voucherCategories}
                           placeholder="เช่น ค่าวัสดุ, ค่าจ้างเหมา"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                     </div>
@@ -879,7 +879,7 @@ export function DocumentWizardModal({
                           onChange={setVoucherPayee}
                           suggestions={suggestions.voucherPayees}
                           placeholder="ระบุชื่อผู้รับเงิน"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
                       <div>
@@ -892,7 +892,7 @@ export function DocumentWizardModal({
                           value={voucherAmount}
                           onChange={(e) => setVoucherAmount(e.target.value)}
                           placeholder="0.00"
-                          className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm tabular-nums focus:outline-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm tabular-nums focus:outline-none"
                         />
                       </div>
                     </div>
@@ -906,7 +906,7 @@ export function DocumentWizardModal({
                         value={voucherProject}
                         onChange={(e) => setVoucherProject(e.target.value)}
                         placeholder="ระบุชื่อโครงการ"
-                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] text-sm focus:outline-none"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
                     </div>
                   </>
@@ -918,7 +918,7 @@ export function DocumentWizardModal({
             {step === 3 && (
               <div className="space-y-5">
                 {docType !== 'forms' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-xl border-2 border-[#B5B1C8] bg-[#F8F7FB]">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-xl border border-[#E5E2F0] bg-[#FAF9FC]">
                     <div>
                       <label className="block text-xs font-bold text-[#242038] mb-1.5">
                         ผู้รับผิดชอบ
@@ -928,7 +928,7 @@ export function DocumentWizardModal({
                         onChange={setAssignee}
                         suggestions={suggestions.assignees}
                         placeholder="ระบุชื่อผู้รับผิดชอบ"
-                        className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                       />
                     </div>
                     <div>
@@ -938,7 +938,7 @@ export function DocumentWizardModal({
                       <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm font-semibold focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm font-semibold focus:outline-none"
                       >
                         {WORKFLOW_STATUSES.map((s) => (
                           <option key={s} value={s}>
@@ -955,21 +955,21 @@ export function DocumentWizardModal({
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
+                        className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                       />
                     </div>
                   </div>
                 )}
 
                 {/* File Upload Section */}
-                <div className="p-4 rounded-xl border-2 border-[#9690B0] bg-[#F5F4F9] space-y-3">
+                <div className="p-4 rounded-xl border border-[#D7D2E6] bg-[#F5F4F9] shadow-[0_2px_10px_rgba(36,32,56,0.03)] space-y-3">
                   <div className="flex items-center gap-2 text-sm font-bold text-[#242038]">
                     <FileUp className="w-4 h-4 text-[#6B6293]" />
                     <span>แนบไฟล์เอกสารเพื่ออัปโหลดขึ้น Google Drive</span>
                   </div>
 
                   {hasExistingAttachment && !removeExistingAttachment && !selectedFile && (
-                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white border-2 border-[#B5B1C8]">
+                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white border border-[#D7D2E6]">
                       <a
                         href={editingDoc?.fileData}
                         target="_blank"
@@ -984,7 +984,7 @@ export function DocumentWizardModal({
                       <button
                         type="button"
                         onClick={() => setRemoveExistingAttachment(true)}
-                        className="px-3 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#EF4444] text-xs font-semibold inline-flex items-center gap-1 shrink-0 transition-colors"
+                        className="px-3 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 shrink-0 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>นำไฟล์ออก</span>
@@ -993,14 +993,14 @@ export function DocumentWizardModal({
                   )}
 
                   {hasExistingAttachment && removeExistingAttachment && !selectedFile && (
-                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FEF3C7] border-2 border-[#D97706]">
+                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]">
                       <span className="text-xs font-semibold text-[#78350F]">
                         ไฟล์แนบเดิมจะถูกนำออกจากรายการเมื่อกดบันทึก
                       </span>
                       <button
                         type="button"
                         onClick={() => setRemoveExistingAttachment(false)}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-[#D97706] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
+                        className="px-3 py-1.5 rounded-lg bg-white border border-[#F59E0B] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>ยกเลิก</span>
@@ -1015,11 +1015,11 @@ export function DocumentWizardModal({
                       const file = e.target.files?.[0] || null;
                       setSelectedFile(file);
                     }}
-                    className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border-2 border-[#B5B1C8] p-1.5"
+                    className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border border-[#C9C4DC] p-1.5"
                   />
 
                   {selectedFile ? (
-                    <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#16A34A] px-3 py-2 rounded-lg flex items-center justify-between">
+                    <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex items-center justify-between">
                       <span className="truncate">
                         ไฟล์ที่เลือก: {selectedFile.name} (
                         {(selectedFile.size / 1024).toFixed(1)} KB)
@@ -1043,7 +1043,7 @@ export function DocumentWizardModal({
           </div>
 
           {/* Footer Navigation */}
-          <div className="px-5 sm:px-6 py-4 bg-[#F8F7FB] border-t-2 border-[#E2DFEE] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+          <div className="px-5 sm:px-6 py-4 bg-[#F8F7FB] border-t border-[#E5E2F0] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
             <div>
               {step > 1 && (
                 <button
@@ -1053,7 +1053,7 @@ export function DocumentWizardModal({
                     setStepError('');
                     setStep((prev) => (prev === 3 ? 2 : 1));
                   }}
-                  className="px-4 py-2.5 rounded-xl border-2 border-[#B5B1C8] bg-white hover:bg-[#ECEAF4] text-[#242038] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2.5 rounded-xl border border-[#D7D2E6] bg-white hover:bg-[#ECEAF4] text-[#242038] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>ย้อนกลับ</span>
@@ -1066,7 +1066,7 @@ export function DocumentWizardModal({
                 type="button"
                 disabled={isSubmitting}
                 onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-[#B5B1C8] bg-white hover:bg-[#F5F4F9] text-[#242038] text-sm font-medium transition-colors"
+                className="px-4 py-2.5 rounded-xl border border-[#D7D2E6] bg-white hover:bg-[#F5F4F9] text-[#242038] text-sm font-medium transition-colors"
               >
                 ยกเลิก
               </button>
@@ -1075,7 +1075,7 @@ export function DocumentWizardModal({
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="px-5 py-2.5 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  className="px-5 py-2.5 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] shadow-[0_2px_8px_rgba(107,98,147,0.22)] text-white text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
                 >
                   <span>ถัดไป</span>
                   <ArrowRight className="w-4 h-4" />
@@ -1088,7 +1088,7 @@ export function DocumentWizardModal({
                     type="button"
                     disabled={isSubmitting}
                     onClick={handleNextStep}
-                    className="px-4 py-2.5 rounded-xl border-2 border-[#6B6293] bg-[#ECEAF4] hover:bg-[#E2DFEE] text-[#242038] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                    className="px-4 py-2.5 rounded-xl border border-[#8E86B4] bg-[#ECEAF4] hover:bg-[#E2DFEE] text-[#242038] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                   >
                     <span>ถัดไป</span>
                     <ArrowRight className="w-4 h-4" />
@@ -1097,7 +1097,7 @@ export function DocumentWizardModal({
                     type="button"
                     disabled={isSubmitting}
                     onClick={handleSaveFromStep2}
-                    className="px-5 py-2.5 rounded-xl bg-[#15803D] hover:bg-[#166534] border-2 border-[#14532D] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors disabled:opacity-60"
+                    className="px-5 py-2.5 rounded-xl bg-[#15803D] hover:bg-[#166534] border border-[#166534] shadow-[0_2px_8px_rgba(21,128,61,0.22)] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors disabled:opacity-60"
                   >
                     {isSubmitting ? (
                       <>
@@ -1118,7 +1118,7 @@ export function DocumentWizardModal({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors disabled:opacity-60"
+                  className="px-5 py-2.5 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] shadow-[0_2px_8px_rgba(107,98,147,0.22)] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors disabled:opacity-60"
                 >
                   {isSubmitting ? (
                     <>

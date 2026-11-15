@@ -87,9 +87,9 @@ export function DocumentDetailModal({
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-2xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
+      <div className="bg-white rounded-2xl border border-white/85 ring-1 ring-[#C9C4DC]/60 shadow-2xl w-full max-w-2xl max-h-[93dvh] flex flex-col overflow-hidden my-auto">
         {/* Header */}
-        <div className="bg-[#B5B1C8] px-5 sm:px-6 py-4 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0] shrink-0">
+        <div className="bg-[#B5B1C8] px-5 sm:px-6 py-4 text-[#242038] flex items-center justify-between border-none shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <DocTypeBadge type={doc.type} />
             <h3 className="font-bold text-base sm:text-lg truncate">
@@ -101,7 +101,7 @@ export function DocumentDetailModal({
             disabled={isSavingQuickUpdate}
             onClick={onClose}
             aria-label="ปิดรายละเอียด"
-            className="w-8 h-8 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center shrink-0 transition-colors"
+            className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center shrink-0 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -109,7 +109,7 @@ export function DocumentDetailModal({
 
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 saraban-scroll">
           {/* Highlight Metadata Strip */}
-          <div className="p-4 rounded-xl border-2 border-[#B5B1C8] bg-[#F5F4F9] flex flex-wrap items-center justify-between gap-3">
+          <div className="p-4 rounded-xl border border-[#E5E2F0] bg-[#FAF9FC] flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold text-[#574F7D]">
                 {doc.regNo && doc.regNo !== '-'
@@ -258,14 +258,14 @@ export function DocumentDetailModal({
 
           {/* Admin Quick Assignment + Attachment Update Panel */}
           {isAdmin ? (
-            <div className="p-4 rounded-xl border-2 border-[#9690B0] bg-[#F5F4F9] space-y-4">
+            <div className="p-4 rounded-xl border border-[#E2DFEE] bg-[#FAF9FC] space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm font-bold text-[#242038]">
                   <FileUp className="w-4 h-4 text-[#6B6293]" />
                   <span>มอบหมายงาน / เปลี่ยนสถานะ / แนบไฟล์เพิ่มเติม</span>
                 </div>
                 {hasPendingChanges && (
-                  <span className="px-2 py-0.5 rounded-md border-2 border-[#F59E0B] bg-[#FEF3C7] text-[#78350F] text-[11px] font-bold shadow-[0_0_10px_rgba(245,158,11,0.6),inset_0_0_4px_rgba(252,211,77,0.45)]">
+                  <span className="px-2 py-0.5 rounded-md border border-[#F59E0B] bg-[#FEF3C7] text-[#78350F] text-[11px] font-bold shadow-[0_0_10px_rgba(245,158,11,0.5),inset_0_0_4px_rgba(252,211,77,0.4)]">
                     มีการแก้ไขที่ยังไม่บันทึก
                   </span>
                 )}
@@ -282,7 +282,7 @@ export function DocumentDetailModal({
                       onChange={setAssignee}
                       suggestions={assigneeSuggestions}
                       placeholder="ระบุชื่อผู้รับผิดชอบ"
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                     />
                   </div>
                   <div>
@@ -292,7 +292,7 @@ export function DocumentDetailModal({
                     <select
                       value={status}
                       onChange={(e) => setStatus(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm font-semibold focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm font-semibold focus:outline-none"
                     >
                       {WORKFLOW_STATUSES.map((s) => (
                         <option key={s} value={s}>
@@ -309,7 +309,7 @@ export function DocumentDetailModal({
                       type="date"
                       value={dueDate}
                       onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border-2 border-[#B5B1C8] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-sm focus:outline-none"
                     />
                   </div>
                 </div>
@@ -317,7 +317,7 @@ export function DocumentDetailModal({
 
               <div className="space-y-2.5">
                 {hasExistingAttachment && !removeExistingAttachment && !selectedFile && (
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border-2 border-[#B5B1C8]">
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E5E2F0]">
                     <a
                       href={doc.fileData}
                       target="_blank"
@@ -342,7 +342,7 @@ export function DocumentDetailModal({
                       <button
                         type="button"
                         onClick={() => setRemoveExistingAttachment(true)}
-                        className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#EF4444] text-xs font-semibold inline-flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>นำออก</span>
@@ -352,14 +352,14 @@ export function DocumentDetailModal({
                 )}
 
                 {hasExistingAttachment && removeExistingAttachment && !selectedFile && (
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FEF3C7] border-2 border-[#D97706]">
+                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]">
                     <span className="text-xs font-semibold text-[#78350F]">
                       ไฟล์แนบเดิมจะถูกนำออกเมื่อกดบันทึก
                     </span>
                     <button
                       type="button"
                       onClick={() => setRemoveExistingAttachment(false)}
-                      className="px-2.5 py-1 rounded-lg bg-white border border-[#D97706] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
+                      className="px-2.5 py-1 rounded-lg bg-white border border-[#F59E0B] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>ยกเลิก</span>
@@ -374,11 +374,11 @@ export function DocumentDetailModal({
                     const file = e.target.files?.[0] || null;
                     setSelectedFile(file);
                   }}
-                  className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border-2 border-[#B5B1C8] p-1.5"
+                  className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border border-[#C9C4DC] p-1.5"
                 />
 
                 {selectedFile && (
-                  <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#16A34A] px-3 py-2 rounded-lg flex items-center justify-between">
+                  <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex items-center justify-between">
                     <span className="truncate">
                       ไฟล์ใหม่ที่จะอัปโหลด: {selectedFile.name} (
                       {(selectedFile.size / 1024).toFixed(1)} KB)
@@ -395,7 +395,7 @@ export function DocumentDetailModal({
               </div>
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl border-2 border-[#E2DFEE] bg-white flex items-center justify-between gap-3">
+            <div className="p-3.5 rounded-xl border border-[#E5E2F0] bg-white flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0 text-sm">
                 <Paperclip className="w-4 h-4 text-[#6B6293] shrink-0" />
                 <span className="font-medium text-slate-700 truncate">
@@ -418,12 +418,12 @@ export function DocumentDetailModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 sm:px-6 py-4 bg-[#F8F7FB] border-t-2 border-[#E2DFEE] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+        <div className="px-5 sm:px-6 py-4 bg-[#FAF9FC] border-t border-[#ECEAF4] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           <button
             type="button"
             disabled={isSavingQuickUpdate}
             onClick={() => onPrintCoverSheet(doc)}
-            className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors"
+            className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors"
           >
             <Printer className="w-4 h-4" />
             <span>พิมพ์ใบปะหน้า</span>
@@ -439,7 +439,7 @@ export function DocumentDetailModal({
                     onClose();
                     onEdit(doc);
                   }}
-                  className="px-3.5 py-2 rounded-xl border-2 border-[#F59E0B] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 rounded-xl border border-[#FDE68A] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] text-sm font-semibold inline-flex items-center gap-1.5 transition-colors"
                 >
                   <Pencil className="w-4 h-4" />
                   <span>แก้ไขทั้งหมด</span>
@@ -448,7 +448,7 @@ export function DocumentDetailModal({
                   type="button"
                   disabled={isSavingQuickUpdate || !hasPendingChanges}
                   onClick={handleSaveDetails}
-                  className="px-4 py-2 rounded-xl bg-[#15803D] hover:bg-[#166534] border-2 border-[#14532D] text-white text-sm font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-[#15803D] hover:bg-[#166534] border border-[#14532D] text-white text-sm font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                   {isSavingQuickUpdate ? (
                     <>

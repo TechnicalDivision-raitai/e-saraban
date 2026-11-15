@@ -29,8 +29,8 @@ export function DeleteDocModal({
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border-2 border-[#DC2626] shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-[#991B1B] px-5 py-4 text-white flex items-center justify-between border-b-2 border-[#EF4444]">
+      <div className="bg-white rounded-2xl border border-[#FCA5A5] shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-[#991B1B] px-5 py-4 text-white flex items-center justify-between border-none">
           <div className="flex items-center gap-2 font-bold">
             <AlertTriangle className="w-5 h-5" />
             <span>เลือกสิ่งที่ต้องการลบ</span>
@@ -55,9 +55,9 @@ export function DeleteDocModal({
           <div className="space-y-2.5">
             {hasAttachment && (
               <label
-                className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-colors ${
+                className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-colors ${
                   mode === 'attachment'
-                    ? 'border-[#D97706] bg-[#FEF3C7]'
+                    ? 'border-[#F59E0B] bg-[#FEF3C7]'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}
               >
@@ -80,9 +80,9 @@ export function DeleteDocModal({
             )}
 
             <label
-              className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-colors ${
+              className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition-colors ${
                 mode === 'record'
-                  ? 'border-[#DC2626] bg-[#FEE2E2]'
+                  ? 'border-[#EF4444] bg-[#FEE2E2]'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
             >
@@ -158,21 +158,21 @@ export function StatusUpdateModal({
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border-2 border-[#9690B0] shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-[#B5B1C8] px-5 py-4 text-[#242038] flex items-center justify-between border-b-2 border-[#9690B0]">
+      <div className="bg-white rounded-2xl border border-white/85 ring-1 ring-[#C9C4DC]/60 shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-[#B5B1C8] px-5 py-4 text-[#242038] flex items-center justify-between border-none">
           <h3 className="font-bold text-base">เปลี่ยนสถานะการดำเนินงาน</h3>
           <button
             type="button"
             onClick={onClose}
             disabled={isBusy}
-            className="w-8 h-8 rounded-lg bg-white hover:bg-[#F5F4F9] border border-[#9690B0] text-[#242038] flex items-center justify-center transition-colors"
+            className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="p-5 space-y-3">
-          <div className="text-xs font-semibold text-[#242038] bg-[#F5F4F9] border border-[#B5B1C8] p-3 rounded-xl">
+          <div className="text-xs font-semibold text-[#242038] bg-[#FAF9FC] border border-[#E5E2F0] p-3 rounded-xl">
             เรื่อง: {doc.subject || doc.voucherProject || doc.formName || '-'}
           </div>
           <div className="space-y-2">
@@ -183,10 +183,10 @@ export function StatusUpdateModal({
                   key={s}
                   type="button"
                   onClick={() => setSelectedStatus(s)}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border-2 text-left text-sm font-semibold flex items-center justify-between transition-colors ${
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-left text-sm font-semibold flex items-center justify-between transition-colors ${
                     active
-                      ? 'border-[#6B6293] bg-[#ECEAF4] text-[#242038]'
-                      : 'border-[#E2DFEE] bg-white text-slate-700 hover:border-[#9690B0]'
+                      ? 'border-[#6B6293] bg-[#F1EFF7] text-[#242038]'
+                      : 'border-[#E5E2F0] bg-white text-slate-700 hover:border-[#B5B1C8]'
                   }`}
                 >
                   <span>{s}</span>
@@ -197,12 +197,12 @@ export function StatusUpdateModal({
           </div>
         </div>
 
-        <div className="px-5 py-4 bg-[#F8F7FB] border-t border-[#E2DFEE] flex justify-end gap-2.5">
+        <div className="px-5 py-4 bg-[#FAF9FC] border-t border-[#ECEAF4] flex justify-end gap-2.5">
           <button
             type="button"
             disabled={isBusy}
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[#B5B1C8] bg-white hover:bg-[#F5F4F9] text-[#242038] text-sm font-medium"
+            className="px-4 py-2 rounded-xl border border-[#C9C4DC] bg-white hover:bg-[#F5F4F9] text-[#242038] text-sm font-medium"
           >
             ยกเลิก
           </button>
@@ -210,7 +210,7 @@ export function StatusUpdateModal({
             type="button"
             disabled={isBusy}
             onClick={() => onConfirmStatus(selectedStatus)}
-            className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
+            className="px-4 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white text-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
           >
             {isBusy && <Loader2 className="w-4 h-4 animate-spin" />}
             <span>บันทึกสถานะ</span>

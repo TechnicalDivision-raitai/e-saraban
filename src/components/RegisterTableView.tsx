@@ -204,14 +204,14 @@ export function RegisterTableView({
       align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start';
     return (
       <th
-        className={`p-3.5 sticky top-0 z-20 border-b-2 transition-colors ${
+        className={`p-3.5 sticky top-0 z-20 border-b transition-colors ${
           tabId === 'overdue'
             ? active
-              ? 'bg-[#FEE2E2] text-[#7F1D1D] border-[#DC2626]'
+              ? 'bg-[#FEE2E2] text-[#7F1D1D] border-[#FCA5A5]'
               : 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]'
             : active
-            ? 'bg-[#E4E1EE] text-[#242038] border-[#6B6293]'
-            : 'bg-[#F1EFF7] text-[#242038] border-[#B5B1C8]'
+            ? 'bg-[#ECEAF4] text-[#242038] border-[#C9C4DC]'
+            : 'bg-[#F6F4FA] text-[#242038] border-[#E5E2F0]'
         }`}
       >
         <button
@@ -242,7 +242,7 @@ export function RegisterTableView({
           target="_blank"
           rel="noopener noreferrer"
           title={doc.fileName || 'เปิดดูไฟล์แนบ'}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-[#9690B0] bg-[#ECEAF4] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#C9C4DC] bg-[#F1EFF7] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
         >
           <Paperclip className="w-3.5 h-3.5" />
           <span>เปิดไฟล์</span>
@@ -321,15 +321,15 @@ export function RegisterTableView({
 
   return (
     <div className="max-w-[1600px] mx-auto">
-      <div className="bg-white rounded-2xl border-2 border-[#B5B1C8] overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden">
         {/* Heading & Filter Bar */}
-        <div className="p-4 sm:p-5 border-b-2 border-[#E2DFEE] bg-[#F8F7FB] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5">
+        <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h2 className="text-base sm:text-lg font-bold text-[#242038]">
                 {tabMeta.title}
               </h2>
-              <span className="px-2.5 py-0.5 rounded-lg border-2 border-[#0EA5E9] bg-[#E0F2FE] text-[#0C4A6E] text-xs font-bold tabular-nums shadow-[0_0_12px_rgba(14,165,233,0.6),inset_0_0_6px_rgba(125,211,252,0.45)]">
+              <span className="px-2.5 py-0.5 rounded-full border border-[#0EA5E9] bg-[#E0F2FE] text-[#0C4A6E] text-xs font-bold tabular-nums shadow-[0_0_10px_rgba(14,165,233,0.45),inset_0_0_4px_rgba(125,211,252,0.4)]">
                 {filteredAndSortedRows.length} รายการ
               </span>
             </div>
@@ -344,10 +344,10 @@ export function RegisterTableView({
                   setYearFilterByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
                 }
                 aria-label="กรองตามปี"
-                className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-colors focus:outline-none ${
+                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors focus:outline-none ${
                   selectedYear
-                    ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
-                    : 'border-[#B5B1C8] bg-white text-slate-800 hover:border-[#9690B0]'
+                    ? 'border-[#B5B1C8] bg-white text-[#242038]'
+                    : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
                 }`}
               >
                 {isMixedTypeTab && (
@@ -370,10 +370,10 @@ export function RegisterTableView({
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 aria-label="กรองตามสถานะ"
-                className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-colors focus:outline-none ${
+                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors focus:outline-none ${
                   statusFilter
-                    ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
-                    : 'border-[#B5B1C8] bg-white text-slate-800 hover:border-[#9690B0]'
+                    ? 'border-[#B5B1C8] bg-white text-[#242038]'
+                    : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
                 }`}
               >
                 <option value="">ทุกสถานะ</option>
@@ -395,10 +395,10 @@ export function RegisterTableView({
                     setSearchByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
                   }
                   placeholder="ค้นหาเรื่อง, เลขที่, ผู้เกี่ยวข้อง..."
-                  className={`w-full pl-9 pr-3 py-2 rounded-xl text-sm border-2 transition-colors focus:outline-none ${
+                  className={`w-full pl-9 pr-3 py-2 rounded-xl text-sm border transition-colors focus:outline-none ${
                     searchQuery
-                      ? 'border-[#6B6293] bg-[#F5F4F9] text-[#242038]'
-                      : 'border-[#B5B1C8] bg-white text-slate-800 focus:border-[#6B6293]'
+                      ? 'border-[#6B6293] bg-white text-[#242038]'
+                      : 'border-[#DCD8EB] bg-white text-slate-800 focus:border-[#6B6293]'
                   }`}
                 />
               </div>
@@ -426,7 +426,7 @@ export function RegisterTableView({
                 <button
                   type="button"
                   onClick={() => excelInputRef.current?.click()}
-                  className="bg-[#7E74A6] hover:bg-[#6B6293] border-2 border-[#524A75] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="bg-[#F1EFF7] hover:bg-[#6B6293] border border-[#C9C4DC] hover:border-[#524A75] text-[#4A4173] hover:text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
                   <span>นำเข้า Excel</span>
@@ -438,7 +438,7 @@ export function RegisterTableView({
               <button
                 type="button"
                 onClick={() => onExportCSV(tabId as DocType)}
-                className="bg-[#15803D] hover:bg-[#166534] border-2 border-[#166534] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                className="bg-[#ECFDF5] hover:bg-[#DCFCE7] border border-[#86EFAC] text-[#15803D] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
               >
                 <Download className="w-4 h-4" />
                 <span>CSV</span>
@@ -450,7 +450,7 @@ export function RegisterTableView({
               onClick={() =>
                 onPrintRegisterReport(tabMeta.title, filteredAndSortedRows, filterSummaryText)
               }
-              className="bg-[#6B6293] hover:bg-[#574F7D] border-2 border-[#524A75] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              className="bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
             >
               <Printer className="w-4 h-4" />
               <span>พิมพ์รายงาน A4</span>
@@ -469,10 +469,10 @@ export function RegisterTableView({
                   {renderSortHeader('วันที่', 'date')}
                   {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject')}
                   {renderSortHeader('สถานะงาน / รับทราบ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     การกระทำ
                   </th>
                 </tr>
@@ -486,10 +486,10 @@ export function RegisterTableView({
                   {renderSortHeader('เรื่อง / ผู้ส่ง', 'subject')}
                   {renderSortHeader('ความเร่งด่วน', 'urgency', 'center')}
                   {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -501,10 +501,10 @@ export function RegisterTableView({
                   {renderSortHeader('เลขที่หนังสือส่ง / วันที่', 'docNumber')}
                   {renderSortHeader('เรื่อง / ผู้รับ', 'subject')}
                   {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -516,10 +516,10 @@ export function RegisterTableView({
                   {renderSortHeader('เลขที่คำสั่ง / วันที่', 'docNumber')}
                   {renderSortHeader('เรื่องคำสั่ง', 'subject')}
                   {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -531,10 +531,10 @@ export function RegisterTableView({
                   {renderSortHeader('เลขที่บันทึก / วันที่', 'docNumber')}
                   {renderSortHeader('งาน / เรียน / เรื่อง', 'subject')}
                   {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -545,10 +545,10 @@ export function RegisterTableView({
                   {renderSortHeader('งาน', 'memoWork')}
                   {renderSortHeader('เลขที่แบบ', 'formCode')}
                   {renderSortHeader('ชื่อแบบฟอร์ม', 'formName')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -562,7 +562,7 @@ export function RegisterTableView({
                   {renderSortHeader('ประเภทฎีกา / ชื่อโครงการ', 'voucherCategory')}
                   {renderSortHeader('ผู้รับเงิน', 'voucherPayee')}
                   {renderSortHeader('จำนวนเงิน (บาท)', 'voucherAmount', 'right')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -575,10 +575,10 @@ export function RegisterTableView({
                   {renderSortHeader('เลขทะเบียน / เลขที่', 'regNo')}
                   {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject')}
                   {renderSortHeader('สถานะ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F1EFF7] text-[#242038] border-b-2 border-[#B5B1C8] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
@@ -591,17 +591,17 @@ export function RegisterTableView({
                   {renderSortHeader('เรื่อง', 'subject')}
                   {renderSortHeader('ผู้รับผิดชอบ', 'assignee')}
                   {renderSortHeader('กำหนดเสร็จ', 'dueDate')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b-2 border-[#FECACA] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b border-[#FECACA] text-xs font-semibold">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b-2 border-[#FECACA] text-xs font-semibold">
+                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#FEF2F2] text-[#991B1B] border-b border-[#FECACA] text-xs font-semibold">
                     จัดการ
                   </th>
                 </tr>
               )}
             </thead>
 
-            <tbody className="divide-y divide-slate-200 text-sm">
+            <tbody className="divide-y divide-[#F0EEF6] text-sm">
               {isLoading && documents.length === 0 ? (
                 <tr>
                   <td colSpan={colCountMap[tabId]} className="p-10 text-center text-slate-600">
@@ -848,7 +848,7 @@ export function RegisterTableView({
                           </div>
                         </td>
                         <td className="p-3.5 max-w-md">
-                          <span className="inline-block px-2 py-0.5 rounded-md border-2 border-[#0EA5E9] bg-[#E0F2FE] text-[#0369A1] text-[11px] font-bold mb-1 shadow-[0_0_10px_rgba(14,165,233,0.55),inset_0_0_4px_rgba(125,211,252,0.4)]">
+                          <span className="inline-block px-2 py-0.5 rounded-md border border-[#0EA5E9] bg-[#E0F2FE] text-[#0369A1] text-[11px] font-bold mb-1 shadow-[0_0_10px_rgba(14,165,233,0.45),inset_0_0_4px_rgba(125,211,252,0.35)]">
                             งาน: {d.memoWork || '-'}
                           </span>
                           <div className="font-semibold text-slate-900">
@@ -908,7 +908,7 @@ export function RegisterTableView({
                           </div>
                         </td>
                         <td className="p-3.5 max-w-md">
-                          <span className="inline-block px-2 py-0.5 rounded-md border-2 border-[#F43F5E] bg-[#FFE4E6] text-[#BE123C] text-[11px] font-bold mb-1 shadow-[0_0_10px_rgba(244,63,94,0.55),inset_0_0_4px_rgba(253,164,175,0.4)]">
+                          <span className="inline-block px-2 py-0.5 rounded-md border border-[#F43F5E] bg-[#FFE4E6] text-[#BE123C] text-[11px] font-bold mb-1 shadow-[0_0_10px_rgba(244,63,94,0.45),inset_0_0_4px_rgba(253,164,175,0.35)]">
                             {d.voucherCategory || '-'}
                           </span>
                           <div className="font-semibold text-slate-900">

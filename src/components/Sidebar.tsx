@@ -117,15 +117,15 @@ export function Sidebar({
           onSelectTab(item.id);
           if (isMobile) onCloseMobile();
         }}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border-2 relative ${
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all border relative ${
           collapsed && !isMobile ? 'justify-center px-2' : ''
         } ${
           isActive
-            ? 'bg-[#6B6293] border-[#524A75] text-white shadow-sm'
-            : 'bg-transparent border-transparent text-[#242038] hover:bg-[#DFDCEB] hover:border-[#B5B1C8]'
+            ? 'bg-white/95 border-[#6B6293] text-[#3F3668] font-semibold shadow-[0_0_12px_rgba(107,98,147,0.35),inset_0_0_5px_rgba(181,177,200,0.45)]'
+            : 'bg-transparent border-transparent text-[#242038] hover:bg-[#E2DFEE]/75 hover:border-[#C9C4DC]'
         }`}
       >
-        <Icon className="w-4 h-4 shrink-0" />
+        <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#6B6293]' : ''}`} />
         {(!collapsed || isMobile) && (
           <span className="truncate text-left">{item.label}</span>
         )}
@@ -135,10 +135,10 @@ export function Sidebar({
               collapsed && !isMobile
                 ? 'absolute -top-1 -right-1 px-1.5 py-0.5 text-[10px]'
                 : 'ml-auto px-2 py-0.5 text-xs'
-            } rounded-md font-bold tabular-nums border-2 ${
+            } rounded-md font-bold tabular-nums border ${
               item.badgeVariant === 'red'
                 ? 'bg-[#DC2626] border-[#FCA5A5] text-white badge-glow-urgent'
-                : 'bg-[#2563EB] border-[#93C5FD] text-white shadow-[0_0_12px_rgba(59,130,246,0.75),inset_0_0_5px_rgba(191,219,254,0.55)]'
+                : 'bg-[#2563EB] border-[#93C5FD] text-white shadow-[0_0_12px_rgba(59,130,246,0.7),inset_0_0_5px_rgba(191,219,254,0.5)]'
             }`}
           >
             {item.badge}
@@ -152,14 +152,14 @@ export function Sidebar({
     <>
       {/* Desktop Bright #B5B1C8-Tinted Sidebar */}
       <aside
-        className={`no-print hidden md:flex flex-col bg-[#ECEAF4] text-[#242038] border-r-2 border-[#B5B1C8] shrink-0 transition-all duration-200 ${
+        className={`no-print hidden md:flex flex-col bg-[#ECEAF4] text-[#242038] border-r border-[#DCD8EB] shrink-0 transition-all duration-200 ${
           collapsed ? 'w-[78px]' : 'w-[264px]'
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 px-4 border-b-2 border-[#9690B0] flex items-center justify-between gap-2 shrink-0 bg-[#B5B1C8]">
+        <div className="h-16 px-4 border-b border-[#A5A0BD] flex items-center justify-between gap-2 shrink-0 bg-[#B5B1C8]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-white border-2 border-[#6B6293] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-white/90 border border-white flex items-center justify-center shrink-0 shadow-xs">
               <BookMarked className="w-4 h-4 text-[#5A5180]" />
             </div>
             {!collapsed && (
@@ -177,7 +177,7 @@ export function Sidebar({
             type="button"
             onClick={onToggleCollapse}
             title={collapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'}
-            className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-[#78709B] text-[#242038] flex items-center justify-center transition-colors shrink-0"
+            className="w-8 h-8 rounded-lg bg-white/85 hover:bg-white border border-white/90 text-[#242038] flex items-center justify-center transition-colors shrink-0"
           >
             {collapsed ? (
               <ChevronsRight className="w-4 h-4" />
@@ -189,7 +189,7 @@ export function Sidebar({
 
         {/* User Highlight Frame */}
         <div
-          className={`mx-2.5 my-3 p-2.5 rounded-xl bg-white border-2 border-[#B5B1C8] flex items-center gap-3 shrink-0 ${
+          className={`mx-2.5 my-3 p-2.5 rounded-xl bg-white border border-[#DCD8EB] shadow-[0_2px_8px_rgba(36,32,56,0.04)] flex items-center gap-3 shrink-0 ${
             collapsed ? 'justify-center px-1.5' : ''
           }`}
         >
@@ -239,12 +239,12 @@ export function Sidebar({
         </nav>
 
         {/* Footer Controls */}
-        <div className="p-2.5 border-t-2 border-[#B5B1C8] space-y-2 shrink-0 bg-[#E1DEE9]">
+        <div className="p-2.5 border-t border-[#DCD8EB] space-y-2 shrink-0 bg-[#E5E2EE]">
           <button
             type="button"
             onClick={onOpenRoleSwitch}
             title="สลับสิทธิ์การใช้งาน"
-            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white hover:bg-[#F5F4F9] border-2 border-[#9690B0] text-[#242038] text-sm font-semibold transition-colors whitespace-nowrap ${
+            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white hover:bg-[#F8F7FB] border border-[#C9C4DC] text-[#242038] text-sm font-semibold transition-colors whitespace-nowrap ${
               collapsed ? 'px-2' : ''
             }`}
           >
@@ -255,7 +255,7 @@ export function Sidebar({
             type="button"
             onClick={onLogout}
             title="ออกจากระบบ"
-            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#FEE2E2] hover:bg-[#DC2626] border-2 border-[#EF4444] text-[#991B1B] hover:text-white text-sm font-semibold transition-colors whitespace-nowrap ${
+            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#FEE2E2] hover:bg-[#DC2626] border border-[#FCA5A5] hover:border-[#DC2626] text-[#991B1B] hover:text-white text-sm font-semibold transition-colors whitespace-nowrap ${
               collapsed ? 'px-2' : ''
             }`}
           >
@@ -268,10 +268,10 @@ export function Sidebar({
       {/* Mobile Drawer */}
       {mobileOpen && (
         <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/50 md:hidden flex">
-          <div className="w-72 bg-[#ECEAF4] text-[#242038] h-full flex flex-col p-4 space-y-3 border-r-2 border-[#B5B1C8] shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b-2 border-[#B5B1C8]">
+          <div className="w-72 bg-[#ECEAF4] text-[#242038] h-full flex flex-col p-4 space-y-3 border-r border-[#DCD8EB] shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DCD8EB]">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#B5B1C8] border-2 border-[#6B6293] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-[#B5B1C8] border border-[#9690B0] flex items-center justify-center">
                   <BookMarked className="w-4 h-4 text-[#242038]" />
                 </div>
                 <div>
@@ -283,7 +283,7 @@ export function Sidebar({
                 type="button"
                 onClick={onCloseMobile}
                 aria-label="ปิดเมนู"
-                className="w-8 h-8 rounded-lg bg-white border border-[#9690B0] text-[#242038] flex items-center justify-center"
+                className="w-8 h-8 rounded-lg bg-white border border-[#DCD8EB] text-[#242038] flex items-center justify-center"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -297,14 +297,14 @@ export function Sidebar({
               </div>
             </nav>
 
-            <div className="pt-3 border-t-2 border-[#B5B1C8] space-y-2">
+            <div className="pt-3 border-t border-[#DCD8EB] space-y-2">
               <button
                 type="button"
                 onClick={() => {
                   onCloseMobile();
                   onOpenRoleSwitch();
                 }}
-                className="w-full py-2.5 rounded-xl bg-white border-2 border-[#9690B0] text-[#242038] text-sm font-semibold"
+                className="w-full py-2.5 rounded-xl bg-white border border-[#C9C4DC] text-[#242038] text-sm font-semibold"
               >
                 สลับสิทธิ์การใช้งาน
               </button>
@@ -314,7 +314,7 @@ export function Sidebar({
                   onCloseMobile();
                   onLogout();
                 }}
-                className="w-full py-2.5 rounded-xl bg-[#FEE2E2] border-2 border-[#EF4444] text-[#991B1B] text-sm font-semibold"
+                className="w-full py-2.5 rounded-xl bg-[#FEE2E2] border border-[#FCA5A5] text-[#991B1B] text-sm font-semibold"
               >
                 ออกจากระบบ
               </button>
@@ -325,7 +325,7 @@ export function Sidebar({
       )}
 
       {/* Mobile Bottom Nav */}
-      <div className="no-print md:hidden fixed bottom-0 left-0 right-0 bg-[#ECEAF4] border-t-2 border-[#B5B1C8] h-16 flex items-center justify-around px-1 z-40">
+      <div className="no-print md:hidden fixed bottom-0 left-0 right-0 bg-[#ECEAF4] border-t border-[#DCD8EB] h-16 flex items-center justify-around px-1 z-40">
         {(
           [
             overviewItems[0],
@@ -344,7 +344,7 @@ export function Sidebar({
               onClick={() => onSelectTab(item.id)}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 mx-0.5 rounded-xl transition-colors border ${
                 isActive
-                  ? 'bg-[#6B6293] border-[#524A75] text-white'
+                  ? 'bg-white border-[#6B6293] text-[#3F3668] font-semibold shadow-[0_0_8px_rgba(107,98,147,0.3)]'
                   : 'border-transparent text-[#3A3454]'
               }`}
             >

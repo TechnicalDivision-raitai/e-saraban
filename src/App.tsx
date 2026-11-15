@@ -748,7 +748,7 @@ export default function App() {
           return (
             <div
               key={toast.id}
-              className={`pointer-events-auto p-3.5 rounded-xl border-2 shadow-lg flex items-start gap-2.5 ${styleMap}`}
+              className={`pointer-events-auto p-3.5 rounded-xl border shadow-lg flex items-start gap-2.5 ${styleMap}`}
             >
               {toast.type === 'success' ? (
                 <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />

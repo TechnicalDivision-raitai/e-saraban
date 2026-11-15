@@ -80,7 +80,7 @@ export function SmartAutocompleteInput({
       {showDropdown && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border-2 border-[#6B6293] rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 saraban-scroll"
+          className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#C9C4DC] rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 saraban-scroll"
         >
           {filtered.map((item, idx) => (
             <li key={item}>
