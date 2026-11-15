@@ -43,73 +43,241 @@ export function matchesCurrentYearByType(doc: SarabanDoc, date = new Date()): bo
   return String(doc.yearStr || '').trim() === getCurrentYearForType(doc.type, date);
 }
 
-export function getTodayISO(): string {
+const THAI_MONTH_MAP: Record<string, number> = {
+  'ม.ค.': 1,
+  'มกราคม': 1,
+  'ก.พ.': 2,
+  'กุมภาพันธ์': 2,
+  'มี.ค.': 3,
+  'มีนาคม': 3,
+  'เม.ย.': 4,
+  'เมษายน': 4,
+  'พ.ค.': 5,
+  'พฤษภาคม': 5,
+  'มิ.ย.': 6,
+  'มิถุนายน': 6,
+  'ก.ค.': 7,
+  'กรกฎาคม': 7,
+  'ส.ค.': 8,
+  'สิงหาคม': 8,
+  'ก.ย.': 9,
+  'กันยายน': 9,
+  'ต.ค.': 10,
+  'ตุลาคม': 10,
+  'พ.ย.': 11,
+  'พฤศจิกายน': 11,
+  'ธ.ค.': 12,
+  'ธันวาคม': 12,
+};
+
+function getBangkokDateTimeParts(date: Date): {
+  year: number;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+} {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Bangkok',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
-  const y = parts.find((p) => p.type === 'year')?.value || '2026';
-  const m = parts.find((p) => p.type === 'month')?.value || '01';
-  const d = parts.find((p) => p.type === 'day')?.value || '01';
-  return `${y}-${m}-${d}`;
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  return {
+    year: Number(parts.find((p) => p.type === 'year')?.value || date.getFullYear()),
+    month: parts.find((p) => p.type === 'month')?.value || '01',
+    day: parts.find((p) => p.type === 'day')?.value || '01',
+    hour: parts.find((p) => p.type === 'hour')?.value || '00',
+    minute: parts.find((p) => p.type === 'minute')?.value || '00',
+  };
+}
+
+function buildValidISO(yearInput: number, monthInput: number, dayInput: number): string {
+  let year = yearInput;
+  if (year > 2400) year -= 543;
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(monthInput) ||
+    Number.isNaN(dayInput) ||
+    year < 1900 ||
+    year > 2300 ||
+    monthInput < 1 ||
+    monthInput > 12 ||
+    dayInput < 1 ||
+    dayInput > 31
+  ) {
+    return '';
+  }
+  return `${String(year).padStart(4, '0')}-${String(monthInput).padStart(2, '0')}-${String(dayInput).padStart(2, '0')}`;
+}
+
+export function normalizeDateToISO(value?: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    const bkk = getBangkokDateTimeParts(value);
+    return buildValidISO(bkk.year, Number(bkk.month), Number(bkk.day));
+  }
+
+  const raw = String(value).trim();
+  if (!raw || raw === '-') return '';
+
+  // ISO timestamp with time/timezone (e.g. 2026-05-14T17:00:00.000Z from Google Sheets)
+  if (/[TZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      const bkk = getBangkokDateTimeParts(parsed);
+      return buildValidISO(bkk.year, Number(bkk.month), Number(bkk.day));
+    }
+  }
+
+  // YYYY-MM-DD or YYYY/M/D (with optional time suffix)
+  let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (match) {
+    return buildValidISO(Number(match[1]), Number(match[2]), Number(match[3]));
+  }
+
+  // DD-MM-YYYY or DD/MM/YYYY (with optional time suffix)
+  match = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (match) {
+    return buildValidISO(Number(match[3]), Number(match[2]), Number(match[1]));
+  }
+
+  // Thai month string e.g. "15 พ.ย. 2569" or "15 พ.ย. 2569 05:43"
+  match = raw.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (match) {
+    const monthNum = THAI_MONTH_MAP[match[2]];
+    if (monthNum) {
+      return buildValidISO(Number(match[3]), monthNum, Number(match[1]));
+    }
+  }
+
+  return '';
+}
+
+export function getTodayISO(): string {
+  const bkk = getBangkokDateTimeParts(new Date());
+  return `${String(bkk.year).padStart(4, '0')}-${bkk.month}-${bkk.day}`;
 }
 
 export function formatThaiDate(dateStr?: string | null): string {
-  if (!dateStr || dateStr === '-') return '-';
-  let parts = String(dateStr).split('T')[0].split('-');
-  if (parts.length !== 3) {
-    parts = String(dateStr).split('/');
-  }
-  if (parts.length === 3) {
-    let year = parseInt(parts[0], 10);
-    const month = parts[1].padStart(2, '0');
-    const day = parts[2].padStart(2, '0');
-    if (!Number.isNaN(year)) {
-      if (year < 2400) year += 543;
-      return `${day}-${month}-${year}`;
-    }
+  if (!dateStr || String(dateStr).trim() === '' || String(dateStr).trim() === '-') return '-';
+  const iso = normalizeDateToISO(dateStr);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const buddhistYear = Number(match[1]) + 543;
+    return `${match[3]}-${match[2]}-${buddhistYear}`;
   }
   return String(dateStr);
 }
 
-export function formatThaiDateTime(date = new Date()): string {
-  return new Intl.DateTimeFormat('th-TH', {
-    timeZone: 'Asia/Bangkok',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(date);
+export function formatThaiDateTime(dateInput: Date | string = new Date()): string {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return '-';
+  const bkk = getBangkokDateTimeParts(date);
+  const buddhistYear = bkk.year < 2400 ? bkk.year + 543 : bkk.year;
+  return `${bkk.day}-${bkk.month}-${buddhistYear} ${bkk.hour}:${bkk.minute}`;
+}
+
+export function formatThaiAckDateTime(value?: string | null): string {
+  if (!value) return '-';
+  const raw = String(value).trim();
+  if (!raw || raw === '-') return '-';
+  if (raw === 'รับทราบแล้ว') return raw;
+
+  // ISO timestamp with timezone (e.g. 2026-11-14T13:43:00.000Z)
+  if (/[TZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatThaiDateTime(parsed);
+    }
+  }
+
+  // YYYY-MM-DD HH:mm or YYYY/MM/DD HH:mm
+  let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    let year = Number(match[1]);
+    if (year < 2400) year += 543;
+    return `${match[3].padStart(2, '0')}-${match[2].padStart(2, '0')}-${year} ${match[4].padStart(2, '0')}:${match[5]}`;
+  }
+
+  // DD-MM-YYYY HH:mm or DD/MM/YYYY HH:mm
+  match = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    let year = Number(match[3]);
+    if (year < 2400) year += 543;
+    return `${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}-${year} ${match[4].padStart(2, '0')}:${match[5]}`;
+  }
+
+  // Thai short/full month with optional time (e.g. "15 พ.ย. 2569 05:43")
+  match = raw.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?)?$/);
+  if (match) {
+    const monthNum = THAI_MONTH_MAP[match[2]];
+    if (monthNum) {
+      let year = Number(match[3]);
+      if (year < 2400) year += 543;
+      const datePart = `${match[1].padStart(2, '0')}-${String(monthNum).padStart(2, '0')}-${year}`;
+      if (match[4] && match[5]) {
+        return `${datePart} ${match[4].padStart(2, '0')}:${match[5]}`;
+      }
+      return datePart;
+    }
+  }
+
+  const isoDateOnly = normalizeDateToISO(raw);
+  if (isoDateOnly) {
+    return formatThaiDate(isoDateOnly);
+  }
+
+  return raw;
 }
 
 export function mapRawRecordToDoc(d: RawSarabanRecord): SarabanDoc {
+  const normalizedReceiveDate =
+    d.receive_date && String(d.receive_date).trim() !== '-'
+      ? normalizeDateToISO(d.receive_date) || String(d.receive_date).trim()
+      : '-';
+  const normalizedDocDate =
+    normalizeDateToISO(d.doc_date) ||
+    (d.doc_date && String(d.doc_date).trim() !== '-' ? String(d.doc_date).trim() : '');
+  const normalizedDueDate =
+    normalizeDateToISO(d.due_date) ||
+    (d.due_date && String(d.due_date).trim() !== '-' ? String(d.due_date).trim() : '');
+  const normalizedVoucherDate =
+    normalizeDateToISO(d.voucher_date) ||
+    (d.voucher_date && String(d.voucher_date).trim() !== '-' ? String(d.voucher_date).trim() : '');
+  const normalizedAckTime =
+    d.ack_time && String(d.ack_time).trim() !== '-'
+      ? formatThaiAckDateTime(String(d.ack_time))
+      : '-';
+
   return {
     id: d.id,
     type: d.type || '',
     regNo: d.reg_no ?? '-',
     yearStr: String(d.year_str || ''),
     centralRegNo: d.central_reg_no ?? '-',
-    receiveDate: d.receive_date ?? '-',
+    receiveDate: normalizedReceiveDate,
     sender: d.sender || '',
     urgency: d.urgency || 'ปกติ',
     docNumber: d.doc_number || '',
-    docDate: d.doc_date || '',
+    docDate: normalizedDocDate,
     subject: d.subject || '',
     status: d.status || '',
     assignee: d.assignee || '',
-    dueDate: d.due_date || '',
+    dueDate: normalizedDueDate,
     ackStatus: d.ack_status || 'รอรับทราบ',
-    ackTime: d.ack_time || '-',
+    ackTime: normalizedAckTime,
     fileName: d.file_name || '',
     fileData: d.file_url || '',
     memoWork: d.memo_work || '',
     formCode: d.form_code || '',
     formName: d.form_name || '',
-    voucherDate: d.voucher_date || '',
+    voucherDate: normalizedVoucherDate,
     voucherMaker: d.voucher_maker || '',
     voucherNo: d.voucher_no || '',
     voucherCategory: d.voucher_category || '',
@@ -188,24 +356,12 @@ export function getInboxDate(doc: SarabanDoc): string {
 
 export function getInboxDateSortValue(dateValue?: string): number {
   if (!dateValue || dateValue === '-') return 0;
-  const value = String(dateValue).trim();
-  let match = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  let year: number;
-  let month: number;
-  let day: number;
-  if (match) {
-    year = Number(match[1]);
-    month = Number(match[2]);
-    day = Number(match[3]);
-  } else {
-    match = value.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
-    if (!match) return Date.parse(value) || 0;
-    day = Number(match[1]);
-    month = Number(match[2]);
-    year = Number(match[3]);
+  const iso = normalizeDateToISO(dateValue);
+  if (iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y, m - 1, d);
   }
-  if (year > 2400) year -= 543;
-  return Date.UTC(year, month - 1, day);
+  return Date.parse(String(dateValue).trim()) || 0;
 }
 
 export function matchesDocumentSearch(doc: SarabanDoc, rawQuery: string): boolean {
@@ -289,10 +445,10 @@ export function getOrderedStatuses(docs: SarabanDoc[]): string[] {
 }
 
 export function isOverdueDoc(doc: SarabanDoc, todayISO = getTodayISO()): boolean {
+  const dueISO = normalizeDateToISO(doc.dueDate);
   return Boolean(
-    doc.dueDate &&
-      doc.dueDate !== '-' &&
-      doc.dueDate < todayISO &&
+    dueISO &&
+      dueISO < todayISO &&
       doc.status !== 'ดำเนินการแล้ว' &&
       doc.status !== 'เสร็จสิ้น'
   );
@@ -300,15 +456,8 @@ export function isOverdueDoc(doc: SarabanDoc, todayISO = getTodayISO()): boolean
 
 export function excelDateToISOString(excelDate: unknown): string {
   if (!excelDate) return getTodayISO();
-  if (typeof excelDate === 'string' && excelDate.includes('-')) {
-    const parts = excelDate.split('-');
-    let y = parseInt(parts[0], 10);
-    if (!Number.isNaN(y) && y > 2400) {
-      y -= 543;
-      return `${y}-${parts[1]}-${parts[2]}`;
-    }
-    return excelDate;
-  }
+  const normalized = normalizeDateToISO(excelDate);
+  if (normalized) return normalized;
   const num = parseFloat(String(excelDate));
   if (!Number.isNaN(num)) {
     const utcDays = Math.floor(num - 25569);
@@ -417,9 +566,9 @@ export function exportRegisterCSV(docs: SarabanDoc[], type: DocType): boolean {
     incoming: [
       ['เลขรับกองช่าง', (d) => d.regNo],
       ['เลขรับส่วนกลาง', (d) => d.centralRegNo],
-      ['วันที่ลงรับ', (d) => d.receiveDate],
+      ['วันที่ลงรับ', (d) => formatThaiDate(d.receiveDate)],
       ['เลขที่หนังสือ', (d) => d.docNumber],
-      ['ลงวันที่', (d) => d.docDate],
+      ['ลงวันที่', (d) => formatThaiDate(d.docDate)],
       ['เรื่อง', (d) => d.subject],
       ['ผู้ส่ง', (d) => d.sender],
       ['ความเร่งด่วน', (d) => d.urgency],
@@ -427,27 +576,27 @@ export function exportRegisterCSV(docs: SarabanDoc[], type: DocType): boolean {
     ],
     outgoing: [
       ['เลขที่หนังสือส่ง', (d) => d.docNumber],
-      ['ลงวันที่', (d) => d.docDate],
+      ['ลงวันที่', (d) => formatThaiDate(d.docDate)],
       ['เรื่อง', (d) => d.subject],
       ['ผู้รับ', (d) => d.sender],
       ['สถานะ', (d) => d.status],
     ],
     orders: [
       ['เลขที่คำสั่ง', (d) => d.docNumber],
-      ['ลงวันที่', (d) => d.docDate],
+      ['ลงวันที่', (d) => formatThaiDate(d.docDate)],
       ['เรื่อง', (d) => d.subject],
       ['สถานะ', (d) => d.status],
     ],
     memos: [
       ['งาน', (d) => d.memoWork],
       ['เลขที่บันทึก', (d) => d.docNumber],
-      ['ลงวันที่', (d) => d.docDate],
+      ['ลงวันที่', (d) => formatThaiDate(d.docDate)],
       ['เรียน', (d) => d.sender],
       ['เรื่อง', (d) => d.subject],
       ['สถานะ', (d) => d.status],
     ],
     vouchers: [
-      ['วันที่จัดทำ', (d) => d.voucherDate],
+      ['วันที่จัดทำ', (d) => formatThaiDate(d.voucherDate)],
       ['ผู้จัดทำ', (d) => d.voucherMaker],
       ['เลขที่ผู้เบิก', (d) => d.voucherNo],
       ['ประเภทฎีกา', (d) => d.voucherCategory],

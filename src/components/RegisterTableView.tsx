@@ -18,6 +18,7 @@ import { TAB_TITLES } from '../types/saraban';
 import {
   CURRENT_YEAR_FILTER_KEY,
   formatRegDisplay,
+  formatThaiAckDateTime,
   formatThaiDate,
   getAvailableYears,
   getCurrentBuddhistYear,
@@ -166,7 +167,7 @@ export function RegisterTableView({
       if (tabId === 'incoming') {
         rows.sort((a, b) => parseInt(String(b.regNo || 0), 10) - parseInt(String(a.regNo || 0), 10));
       } else if (tabId === 'outgoing' || tabId === 'memos') {
-        rows.sort((a, b) => new Date(b.docDate || 0).getTime() - new Date(a.docDate || 0).getTime());
+        rows.sort((a, b) => getInboxDateSortValue(b.docDate) - getInboxDateSortValue(a.docDate));
       } else if (tabId === 'orders') {
         rows.sort((a, b) => {
           const numA = parseInt(String(a.docNumber || '').replace(/[^0-9]/g, ''), 10) || 0;
@@ -175,7 +176,7 @@ export function RegisterTableView({
         });
       } else if (tabId === 'vouchers') {
         rows.sort(
-          (a, b) => new Date(b.voucherDate || 0).getTime() - new Date(a.voucherDate || 0).getTime()
+          (a, b) => getInboxDateSortValue(b.voucherDate) - getInboxDateSortValue(a.voucherDate)
         );
       } else if (tabId === 'myInbox') {
         rows.sort(
@@ -674,7 +675,9 @@ export function RegisterTableView({
                             <StatusHighlightBadge status={d.status} />
                             {d.ackStatus === 'รับทราบแล้ว' ? (
                               <span className="text-[11px] text-slate-600 tabular-nums whitespace-nowrap">
-                                {d.ackTime && d.ackTime !== '-' ? d.ackTime : 'รับทราบแล้ว'}
+                                {d.ackTime && d.ackTime !== '-'
+                                  ? formatThaiAckDateTime(d.ackTime)
+                                  : 'รับทราบแล้ว'}
                               </span>
                             ) : (
                               <button
@@ -748,7 +751,7 @@ export function RegisterTableView({
                             <StatusHighlightBadge status={d.status} />
                             {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
                               <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-                                {d.ackTime}
+                                {formatThaiAckDateTime(d.ackTime)}
                               </span>
                             )}
                           </div>
@@ -784,7 +787,7 @@ export function RegisterTableView({
                             <StatusHighlightBadge status={d.status} />
                             {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
                               <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-                                {d.ackTime}
+                                {formatThaiAckDateTime(d.ackTime)}
                               </span>
                             )}
                           </div>
@@ -817,7 +820,7 @@ export function RegisterTableView({
                             <StatusHighlightBadge status={d.status} />
                             {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
                               <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-                                {d.ackTime}
+                                {formatThaiAckDateTime(d.ackTime)}
                               </span>
                             )}
                           </div>
@@ -858,7 +861,7 @@ export function RegisterTableView({
                             <StatusHighlightBadge status={d.status} />
                             {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
                               <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-                                {d.ackTime}
+                                {formatThaiAckDateTime(d.ackTime)}
                               </span>
                             )}
                           </div>
@@ -979,7 +982,7 @@ export function RegisterTableView({
                           <StatusHighlightBadge status={d.status} />
                           {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
                             <span className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
-                              {d.ackTime}
+                              {formatThaiAckDateTime(d.ackTime)}
                             </span>
                           )}
                         </div>

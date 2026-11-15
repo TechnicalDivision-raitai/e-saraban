@@ -1,7 +1,11 @@
 import { Filter, Receipt, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { SarabanDoc } from '../types/saraban';
-import { getAvailableYears, getCurrentFiscalYear } from '../utils/sarabanUtils';
+import {
+  getAvailableYears,
+  getCurrentFiscalYear,
+  getInboxDateSortValue,
+} from '../utils/sarabanUtils';
 import { BarChart, DoughnutChart } from './Charts';
 
 interface VouchersSummaryViewProps {
@@ -26,7 +30,9 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
   const filteredVouchers = useMemo(() => {
     return allVoucherDocs
       .filter((d) => !summaryYear || String(d.yearStr) === String(summaryYear))
-      .sort((a, b) => new Date(b.voucherDate || 0).getTime() - new Date(a.voucherDate || 0).getTime());
+      .sort(
+        (a, b) => getInboxDateSortValue(b.voucherDate) - getInboxDateSortValue(a.voucherDate)
+      );
   }, [allVoucherDocs, summaryYear]);
 
   const { grandTotal, categoryRows } = useMemo(() => {

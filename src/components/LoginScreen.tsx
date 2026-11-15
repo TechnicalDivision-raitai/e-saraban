@@ -47,7 +47,7 @@ export function LoginScreen({
     >
       <div className="w-full max-w-lg rounded-2xl bg-white border-2 border-[#9690B0] shadow-xl overflow-hidden my-auto">
         {/* Bright #B5B1C8 Signature Header */}
-        <div className="bg-[#B5B1C8] px-6 py-7 text-[#242038] relative border-b-2 border-[#9690B0]">
+        <div className="bg-[#B5B1C8] px-6 py-7 text-[#242038] relative border-none">
           {canDismiss && onDismiss && (
             <button
               type="button"
@@ -74,7 +74,7 @@ export function LoginScreen({
           </div>
         </div>
 
-        <div className="p-6 space-y-4 bg-white">
+        <div className="p-6 space-y-4 bg-white border-none">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-[#242038]">
               เลือกสิทธิ์เพื่อเข้าสู่ระบบ
@@ -83,6 +83,28 @@ export function LoginScreen({
 
           {!showAdminPrompt ? (
             <div className="space-y-3">
+              {/* Staff Role Card */}
+              <button
+                type="button"
+                onClick={onLoginStaff}
+                className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#B5B1C8] bg-white hover:bg-[#F5F4F9] hover:border-[#6B6293] text-left transition-colors group"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-[#8E87AD] text-white flex items-center justify-center shrink-0">
+                    <UserCheck className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-[#242038] text-base">
+                      บุคลากร / เจ้าหน้าที่ (Staff)
+                    </div>
+                    <div className="text-xs text-slate-600 mt-0.5">
+                      ดูรายงานสรุป · ค้นหาหนังสือ · เปิดดูไฟล์แนบ · พิมพ์ใบปะหน้า/รายงาน
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-[#78709B] group-hover:text-[#6B6293] group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
+              </button>
+
               {/* Admin Role Card */}
               <button
                 type="button"
@@ -107,28 +129,6 @@ export function LoginScreen({
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-[#6B6293] group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
-              </button>
-
-              {/* Staff Role Card */}
-              <button
-                type="button"
-                onClick={onLoginStaff}
-                className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#B5B1C8] bg-white hover:bg-[#F5F4F9] hover:border-[#6B6293] text-left transition-colors group"
-              >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-11 h-11 rounded-xl bg-[#8E87AD] text-white flex items-center justify-center shrink-0">
-                    <UserCheck className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-bold text-[#242038] text-base">
-                      บุคลากร / เจ้าหน้าที่ (Staff)
-                    </div>
-                    <div className="text-xs text-slate-600 mt-0.5">
-                      ดูรายงานสรุป · ค้นหาหนังสือ · เปิดดูไฟล์แนบ · พิมพ์ใบปะหน้า/รายงาน
-                    </div>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-[#78709B] group-hover:text-[#6B6293] group-hover:translate-x-0.5 transition-transform shrink-0 ml-2" />
               </button>
             </div>
           ) : (
