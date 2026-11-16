@@ -4,22 +4,36 @@ import { BASE_YEARS, DOC_TYPE_META, WORKFLOW_STATUSES } from '../types/saraban';
 
 export const CURRENT_YEAR_FILTER_KEY = '__CURRENT__';
 
+const BANGKOK_YEAR_MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: 'numeric',
+});
+
+const BANGKOK_YEAR_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+});
+
+const BANGKOK_DATETIME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 export function getCurrentFiscalYear(date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: 'numeric',
-  }).formatToParts(date);
+  const parts = BANGKOK_YEAR_MONTH_FORMATTER.formatToParts(date);
   const year = Number(parts.find((p) => p.type === 'year')?.value || date.getFullYear());
   const month = Number(parts.find((p) => p.type === 'month')?.value || date.getMonth() + 1);
   return String(year + 543 + (month >= 10 ? 1 : 0));
 }
 
 export function getCurrentBuddhistYear(date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-  }).formatToParts(date);
+  const parts = BANGKOK_YEAR_FORMATTER.formatToParts(date);
   const year = Number(parts.find((p) => p.type === 'year')?.value || date.getFullYear());
   return String(year + 543);
 }
@@ -77,15 +91,7 @@ function getBangkokDateTimeParts(date: Date): {
   hour: string;
   minute: string;
 } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
+  const parts = BANGKOK_DATETIME_FORMATTER.formatToParts(date);
 
   return {
     year: Number(parts.find((p) => p.type === 'year')?.value || date.getFullYear()),

@@ -19,7 +19,7 @@ import {
   loadDocsCache,
   saveDocsCache,
 } from './services/driveApi';
-import type { DocType, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
+import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
 import { ADMIN_USER, STAFF_USER } from './types/saraban';
 import {
   exportRegisterCSV,
@@ -28,6 +28,7 @@ import {
   getNextRegNoForYear,
   getUniqueNormalizedSuggestions,
   isOverdueDoc,
+  mapRawRecordToDoc,
   parseExcelToImportRecords,
 } from './utils/sarabanUtils';
 
@@ -49,6 +50,7 @@ export default function App() {
   const [documents, setDocuments] = useState<SarabanDoc[]>(() => loadDocsCache());
   const [isLoadingDocs, setIsLoadingDocs] = useState<boolean>(() => loadDocsCache().length === 0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingWriteCount, setPendingWriteCount] = useState(0);
   const [syncError, setSyncError] = useState('');
   const [selectedDocId, setSelectedDocId] = useState<string | number | null>(null);
 
@@ -73,6 +75,8 @@ export default function App() {
 
   const abortRef = useRef<AbortController | null>(null);
   const lastLoadTimeRef = useRef<number>(0);
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingWriteCountRef = useRef<number>(0);
 
   const pushToast = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
@@ -85,9 +89,53 @@ export default function App() {
     []
   );
 
+  const cancelInFlightRead = useCallback(() => {
+    if (abortRef.current) {
+      try {
+        abortRef.current.abort();
+      } catch {}
+      abortRef.current = null;
+    }
+    lastLoadTimeRef.current = Date.now();
+  }, []);
+
+  const enqueueBackgroundWrite = useCallback(
+    (
+      writeFn: () => Promise<void>,
+      onRollback: () => void,
+      errorTitle: string
+    ) => {
+      cancelInFlightRead();
+      pendingWriteCountRef.current += 1;
+      setPendingWriteCount(pendingWriteCountRef.current);
+      setSyncError('');
+
+      writeQueueRef.current = writeQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            await writeFn();
+            lastLoadTimeRef.current = Date.now();
+          } catch (err) {
+            onRollback();
+            const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive';
+            setSyncError(msg);
+            pushToast('error', errorTitle, msg);
+          } finally {
+            pendingWriteCountRef.current = Math.max(0, pendingWriteCountRef.current - 1);
+            setPendingWriteCount(pendingWriteCountRef.current);
+          }
+        });
+    },
+    [cancelInFlightRead, pushToast]
+  );
+
   const syncFromDrive = useCallback(
     async (options: { force?: boolean; silent?: boolean } = {}) => {
       const { force = false, silent = false } = options;
+      if (!force && pendingWriteCountRef.current > 0) {
+        return;
+      }
       if (
         !force &&
         documents.length > 0 &&
@@ -110,7 +158,11 @@ export default function App() {
       if (documents.length === 0) setIsLoadingDocs(true);
 
       try {
+        if (pendingWriteCountRef.current > 0) {
+          await writeQueueRef.current;
+        }
         const fetched = await fetchDocumentsFromDrive(controller.signal);
+        if (controller.signal.aborted) return;
         setDocuments(fetched);
         saveDocsCache(fetched);
         lastLoadTimeRef.current = Date.now();
@@ -230,15 +282,14 @@ export default function App() {
 
   const handleSaveDocument = async (payload: DocumentFormPayload) => {
     if (!isAdmin) return;
-    setIsSubmittingDoc(true);
-    setUploadPhaseLabel('');
 
-    try {
-      let uploadedFileName = '';
-      let uploadedFileUrl = '';
+    let uploadedFileName = '';
+    let uploadedFileUrl = '';
 
-      if (payload.selectedFile) {
-        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
+    if (payload.selectedFile) {
+      setIsSubmittingDoc(true);
+      setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
+      try {
         const base64Data = await fileToBase64Data(payload.selectedFile);
         const uploadRes = await callDriveApi({
           action: 'uploadFile',
@@ -251,254 +302,57 @@ export default function App() {
         }
         uploadedFileName = payload.selectedFile.name;
         uploadedFileUrl = uploadRes.fileUrl;
-      }
-
-      setUploadPhaseLabel('กำลังบันทึกข้อมูล...');
-
-      if (payload.editId !== null) {
-        const updates: Record<string, unknown> = {
-          type: payload.type,
-          doc_number: payload.docNumber,
-          doc_date: payload.docDate,
-          subject: payload.subject,
-          sender: payload.sender,
-          status: payload.status,
-          assignee: payload.assignee,
-          due_date: payload.dueDate,
-          year_str: payload.yearStr,
-          central_reg_no: payload.type === 'incoming' ? payload.centralRegNo || '-' : '-',
-          receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
-          urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
-          memo_work: payload.memoWork,
-          form_code: payload.formCode,
-          form_name: payload.formName,
-          voucher_date: payload.voucherDate,
-          voucher_maker: payload.voucherMaker,
-          voucher_no: payload.voucherNo,
-          voucher_category: payload.voucherCategory,
-          voucher_payee: payload.voucherPayee,
-          voucher_amount: payload.voucherAmount,
-          voucher_project: payload.voucherProject,
-        };
-
-        const existingDoc = documents.find((d) => String(d.id) === String(payload.editId));
-        if (existingDoc && existingDoc.status !== payload.status) {
-          updates.ack_status = 'รับทราบแล้ว';
-          updates.ack_time = formatThaiDateTime(new Date());
-        }
-
-        if (payload.removeExistingAttachment) {
-          updates.file_name = '';
-          updates.file_url = '';
-        }
-        if (uploadedFileName && uploadedFileUrl) {
-          updates.file_name = uploadedFileName;
-          updates.file_url = uploadedFileUrl;
-        }
-
-        await callDriveApi({
-          action: 'update',
-          id: payload.editId,
-          updates,
-        });
-        pushToast('success', 'อัปเดตข้อมูลสำเร็จ', 'บันทึกการแก้ไขลง Google Drive เรียบร้อยแล้ว');
-      } else {
-        const nextRegNo =
-          payload.type === 'incoming'
-            ? getNextRegNoForYear(documents, 'incoming', payload.yearStr)
-            : '-';
-        const newId = Date.now();
-
-        const record: Record<string, unknown> = {
-          id: newId,
-          type: payload.type,
-          reg_no: nextRegNo,
-          year_str: payload.yearStr,
-          central_reg_no: payload.type === 'incoming' ? payload.centralRegNo || '-' : '-',
-          receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
-          sender: payload.sender,
-          urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
-          doc_number: payload.docNumber,
-          doc_date: payload.docDate,
-          subject: payload.subject,
-          status: payload.status,
-          assignee: payload.assignee,
-          due_date: payload.dueDate,
-          ack_status: 'รอรับทราบ',
-          ack_time: '-',
-          file_name: uploadedFileName,
-          file_url: uploadedFileUrl,
-          memo_work: payload.memoWork,
-          form_code: payload.formCode,
-          form_name: payload.formName,
-          voucher_date: payload.voucherDate,
-          voucher_maker: payload.voucherMaker,
-          voucher_no: payload.voucherNo,
-          voucher_category: payload.voucherCategory,
-          voucher_payee: payload.voucherPayee,
-          voucher_amount: payload.voucherAmount,
-          voucher_project: payload.voucherProject,
-        };
-
-        await callDriveApi({
-          action: 'insert',
-          record,
-        });
-        pushToast('success', 'ลงทะเบียนสำเร็จ', 'บันทึกข้อมูลใหม่ลง Google Drive เรียบร้อยแล้ว');
-      }
-
-      setWizardOpen(false);
-      setEditingDoc(null);
-      await syncFromDrive({ force: true, silent: true });
-    } catch (err) {
-      pushToast(
-        'error',
-        'บันทึกข้อมูลไม่สำเร็จ',
-        err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
-      );
-    } finally {
-      setIsSubmittingDoc(false);
-      setUploadPhaseLabel('');
-    }
-  };
-
-  const handleConfirmDelete = async (mode: 'attachment' | 'record') => {
-    if (!deleteTargetDoc || !isAdmin) return;
-    setIsActionBusy(true);
-    try {
-      if (mode === 'attachment') {
-        await callDriveApi({
-          action: 'update',
-          id: deleteTargetDoc.id,
-          updates: { file_name: '', file_url: '' },
-        });
-        const nextDocs = documents.map((d) =>
-          String(d.id) === String(deleteTargetDoc.id)
-            ? { ...d, fileName: '', fileData: '' }
-            : d
+      } catch (err) {
+        setIsSubmittingDoc(false);
+        setUploadPhaseLabel('');
+        pushToast(
+          'error',
+          'อัปโหลดไฟล์ไม่สำเร็จ',
+          err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
         );
-        setDocuments(nextDocs);
-        saveDocsCache(nextDocs);
-        pushToast('success', 'นำไฟล์แนบออกแล้ว', 'เก็บข้อมูลรายการหนังสือไว้ตามเดิม');
-      } else {
-        await callDriveApi({
-          action: 'delete',
-          id: deleteTargetDoc.id,
-        });
-        const nextDocs = documents.filter((d) => String(d.id) !== String(deleteTargetDoc.id));
-        setDocuments(nextDocs);
-        saveDocsCache(nextDocs);
-        pushToast('success', 'ลบรายการสำเร็จ', 'ลบรายการออกจาก Google Drive เรียบร้อยแล้ว');
-        syncFromDrive({ force: true, silent: true });
+        return;
+      } finally {
+        setIsSubmittingDoc(false);
+        setUploadPhaseLabel('');
       }
-      setDeleteTargetDoc(null);
-    } catch (err) {
-      pushToast('error', 'ลบไม่สำเร็จ', err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
-    } finally {
-      setIsActionBusy(false);
     }
-  };
 
-  const handleAcknowledgeDoc = async (doc: SarabanDoc) => {
-    const ackTimeStr = formatThaiDateTime(new Date());
-    try {
-      await callDriveApi({
-        action: 'update',
-        id: doc.id,
-        updates: {
-          ack_status: 'รับทราบแล้ว',
-          ack_time: ackTimeStr,
-        },
-      });
-      const nextDocs = documents.map((d) =>
-        String(d.id) === String(doc.id)
-          ? { ...d, ackStatus: 'รับทราบแล้ว', ackTime: ackTimeStr }
-          : d
-      );
-      setDocuments(nextDocs);
-      saveDocsCache(nextDocs);
-      pushToast('success', 'รับทราบงานแล้ว', `บันทึกเวลารับทราบ: ${ackTimeStr}`);
-    } catch (err) {
-      pushToast('error', 'ไม่สามารถรับทราบงานได้', err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
-    }
-  };
+    const previousDocs = documents;
 
-  const handleConfirmStatusUpdate = async (newStatus: string) => {
-    if (!statusTargetDoc) return;
-    setIsActionBusy(true);
-    const updateTimeStr = formatThaiDateTime(new Date());
-    try {
-      await callDriveApi({
-        action: 'update',
-        id: statusTargetDoc.id,
-        updates: {
-          status: newStatus,
-          ack_status: 'รับทราบแล้ว',
-          ack_time: updateTimeStr,
-        },
-      });
-      const nextDocs = documents.map((d) =>
-        String(d.id) === String(statusTargetDoc.id)
-          ? {
-              ...d,
-              status: newStatus,
-              ackStatus: 'รับทราบแล้ว',
-              ackTime: updateTimeStr,
-            }
-          : d
-      );
-      setDocuments(nextDocs);
-      saveDocsCache(nextDocs);
-      setStatusTargetDoc(null);
-      pushToast('success', 'อัปเดตสถานะแล้ว', `สถานะใหม่: ${newStatus} (${updateTimeStr})`);
-      syncFromDrive({ force: true, silent: true });
-    } catch (err) {
-      pushToast('error', 'อัปเดตสถานะไม่สำเร็จ', err instanceof Error ? err.message : 'เกิดข้อผิดพลาด');
-    } finally {
-      setIsActionBusy(false);
-    }
-  };
-
-  const handleQuickDetailSave = async (payload: QuickDetailSavePayload) => {
-    if (!isAdmin) return;
-    setIsSubmittingDoc(true);
-    setUploadPhaseLabel('');
-    try {
-      let uploadedFileName = '';
-      let uploadedFileUrl = '';
-
-      if (payload.selectedFile) {
-        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
-        const base64Data = await fileToBase64Data(payload.selectedFile);
-        const uploadRes = await callDriveApi({
-          action: 'uploadFile',
-          fileData: base64Data,
-          mimeType: payload.selectedFile.type || 'application/octet-stream',
-          fileName: payload.selectedFile.name,
-        });
-        if (!uploadRes.fileUrl) {
-          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
-        }
-        uploadedFileName = payload.selectedFile.name;
-        uploadedFileUrl = uploadRes.fileUrl;
-      }
-
-      setUploadPhaseLabel('กำลังบันทึกข้อมูล...');
-      const existingDoc = documents.find((d) => String(d.id) === String(payload.id));
+    if (payload.editId !== null) {
+      const existingDoc = documents.find((d) => String(d.id) === String(payload.editId));
       const statusChanged = Boolean(existingDoc && existingDoc.status !== payload.status);
       const statusUpdateTime = statusChanged ? formatThaiDateTime(new Date()) : '';
 
       const updates: Record<string, unknown> = {
-        assignee: payload.assignee,
+        type: payload.type,
+        doc_number: payload.docNumber,
+        doc_date: payload.docDate,
+        subject: payload.subject,
+        sender: payload.sender,
         status: payload.status,
+        assignee: payload.assignee,
         due_date: payload.dueDate,
+        year_str: payload.yearStr,
+        central_reg_no: payload.type === 'incoming' ? payload.centralRegNo || '-' : '-',
+        receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
+        urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
+        memo_work: payload.memoWork,
+        form_code: payload.formCode,
+        form_name: payload.formName,
+        voucher_date: payload.voucherDate,
+        voucher_maker: payload.voucherMaker,
+        voucher_no: payload.voucherNo,
+        voucher_category: payload.voucherCategory,
+        voucher_payee: payload.voucherPayee,
+        voucher_amount: payload.voucherAmount,
+        voucher_project: payload.voucherProject,
       };
 
       if (statusChanged) {
         updates.ack_status = 'รับทราบแล้ว';
         updates.ack_time = statusUpdateTime;
       }
-
       if (payload.removeExistingAttachment) {
         updates.file_name = '';
         updates.file_url = '';
@@ -508,51 +362,373 @@ export default function App() {
         updates.file_url = uploadedFileUrl;
       }
 
-      await callDriveApi({
-        action: 'update',
-        id: payload.id,
-        updates,
-      });
-
       const nextDocs = documents.map((d) => {
-        if (String(d.id) !== String(payload.id)) return d;
-        const updated: SarabanDoc = {
-          ...d,
-          assignee: payload.assignee,
+        if (String(d.id) !== String(payload.editId)) return d;
+        const nextFileName = uploadedFileName
+          ? uploadedFileName
+          : payload.removeExistingAttachment
+          ? ''
+          : d.fileName;
+        const nextFileData = uploadedFileUrl
+          ? uploadedFileUrl
+          : payload.removeExistingAttachment
+          ? ''
+          : d.fileData;
+
+        return mapRawRecordToDoc({
+          id: d.id,
+          type: payload.type,
+          reg_no: payload.type === 'incoming' ? d.regNo : '-',
+          year_str: payload.yearStr,
+          central_reg_no: payload.type === 'incoming' ? payload.centralRegNo || '-' : '-',
+          receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
+          sender: payload.sender,
+          urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
+          doc_number: payload.docNumber,
+          doc_date: payload.docDate,
+          subject: payload.subject,
           status: payload.status,
-          dueDate: payload.dueDate,
-        };
-        if (statusChanged) {
-          updated.ackStatus = 'รับทราบแล้ว';
-          updated.ackTime = statusUpdateTime;
-        }
-        if (payload.removeExistingAttachment) {
-          updated.fileName = '';
-          updated.fileData = '';
-        }
-        if (uploadedFileName && uploadedFileUrl) {
-          updated.fileName = uploadedFileName;
-          updated.fileData = uploadedFileUrl;
-        }
-        return updated;
+          assignee: payload.assignee,
+          due_date: payload.dueDate,
+          ack_status: statusChanged ? 'รับทราบแล้ว' : d.ackStatus,
+          ack_time: statusChanged ? statusUpdateTime : d.ackTime,
+          file_name: nextFileName,
+          file_url: nextFileData,
+          memo_work: payload.memoWork,
+          form_code: payload.formCode,
+          form_name: payload.formName,
+          voucher_date: payload.voucherDate,
+          voucher_maker: payload.voucherMaker,
+          voucher_no: payload.voucherNo,
+          voucher_category: payload.voucherCategory,
+          voucher_payee: payload.voucherPayee,
+          voucher_amount: payload.voucherAmount,
+          voucher_project: payload.voucherProject,
+        });
       });
 
       setDocuments(nextDocs);
       saveDocsCache(nextDocs);
-      const updatedDetail = nextDocs.find((d) => String(d.id) === String(payload.id)) || null;
-      setDetailDoc(updatedDetail);
-      pushToast('success', 'บันทึกข้อมูลเพิ่มเติมสำเร็จ', 'อัปเดตการมอบหมายและไฟล์แนบลง Drive แล้ว');
-      syncFromDrive({ force: true, silent: true });
-    } catch (err) {
-      pushToast(
-        'error',
-        'บันทึกข้อมูลไม่สำเร็จ',
-        err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
+      setWizardOpen(false);
+      setEditingDoc(null);
+      pushToast('success', 'อัปเดตข้อมูลสำเร็จ', 'บันทึกการแก้ไขเรียบร้อยแล้ว');
+
+      enqueueBackgroundWrite(
+        async () => {
+          await callDriveApi({
+            action: 'update',
+            id: payload.editId,
+            type: existingDoc?.type || payload.type,
+            updates,
+          });
+        },
+        () => {
+          setDocuments(previousDocs);
+          saveDocsCache(previousDocs);
+        },
+        'บันทึกการแก้ไขลง Google Drive ไม่สำเร็จ'
       );
-    } finally {
-      setIsSubmittingDoc(false);
-      setUploadPhaseLabel('');
+    } else {
+      const nextRegNo =
+        payload.type === 'incoming'
+          ? getNextRegNoForYear(documents, 'incoming', payload.yearStr)
+          : '-';
+      const newId = Date.now();
+
+      const rawRecord: RawSarabanRecord = {
+        id: newId,
+        type: payload.type,
+        reg_no: nextRegNo,
+        year_str: payload.yearStr,
+        central_reg_no: payload.type === 'incoming' ? payload.centralRegNo || '-' : '-',
+        receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
+        sender: payload.sender,
+        urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
+        doc_number: payload.docNumber,
+        doc_date: payload.docDate,
+        subject: payload.subject,
+        status: payload.status,
+        assignee: payload.assignee,
+        due_date: payload.dueDate,
+        ack_status: 'รอรับทราบ',
+        ack_time: '-',
+        file_name: uploadedFileName,
+        file_url: uploadedFileUrl,
+        memo_work: payload.memoWork,
+        form_code: payload.formCode,
+        form_name: payload.formName,
+        voucher_date: payload.voucherDate,
+        voucher_maker: payload.voucherMaker,
+        voucher_no: payload.voucherNo,
+        voucher_category: payload.voucherCategory,
+        voucher_payee: payload.voucherPayee,
+        voucher_amount: payload.voucherAmount,
+        voucher_project: payload.voucherProject,
+      };
+
+      const optimisticDoc = mapRawRecordToDoc(rawRecord);
+      const nextDocs = [optimisticDoc, ...documents];
+      setDocuments(nextDocs);
+      saveDocsCache(nextDocs);
+      setSelectedDocId(newId);
+      setWizardOpen(false);
+      setEditingDoc(null);
+      pushToast('success', 'ลงทะเบียนสำเร็จ', 'เพิ่มรายการหนังสือใหม่เรียบร้อยแล้ว');
+
+      enqueueBackgroundWrite(
+        async () => {
+          await callDriveApi({
+            action: 'insert',
+            record: rawRecord as unknown as Record<string, unknown>,
+          });
+        },
+        () => {
+          setDocuments(previousDocs);
+          saveDocsCache(previousDocs);
+        },
+        'บันทึกข้อมูลลง Google Drive ไม่สำเร็จ'
+      );
     }
+  };
+
+  const handleConfirmDelete = async (mode: 'attachment' | 'record') => {
+    if (!deleteTargetDoc || !isAdmin) return;
+    const targetDoc = deleteTargetDoc;
+    const previousDocs = documents;
+
+    if (mode === 'attachment') {
+      const nextDocs = documents.map((d) =>
+        String(d.id) === String(targetDoc.id) ? { ...d, fileName: '', fileData: '' } : d
+      );
+      setDocuments(nextDocs);
+      saveDocsCache(nextDocs);
+      setDeleteTargetDoc(null);
+      setIsActionBusy(false);
+      pushToast('success', 'นำไฟล์แนบออกแล้ว', 'เก็บข้อมูลรายการหนังสือไว้ตามเดิม');
+
+      enqueueBackgroundWrite(
+        async () => {
+          await callDriveApi({
+            action: 'update',
+            id: targetDoc.id,
+            type: targetDoc.type,
+            updates: { file_name: '', file_url: '' },
+          });
+        },
+        () => {
+          setDocuments(previousDocs);
+          saveDocsCache(previousDocs);
+        },
+        'นำไฟล์แนบออกใน Google Drive ไม่สำเร็จ'
+      );
+    } else {
+      const nextDocs = documents.filter((d) => String(d.id) !== String(targetDoc.id));
+      setDocuments(nextDocs);
+      saveDocsCache(nextDocs);
+      setDeleteTargetDoc(null);
+      setIsActionBusy(false);
+      pushToast('success', 'ลบรายการสำเร็จ', 'ลบรายการเอกสารเรียบร้อยแล้ว');
+
+      enqueueBackgroundWrite(
+        async () => {
+          await callDriveApi({
+            action: 'delete',
+            id: targetDoc.id,
+            type: targetDoc.type,
+          });
+        },
+        () => {
+          setDocuments(previousDocs);
+          saveDocsCache(previousDocs);
+        },
+        'ลบรายการจาก Google Drive ไม่สำเร็จ'
+      );
+    }
+  };
+
+  const handleAcknowledgeDoc = (doc: SarabanDoc) => {
+    const ackTimeStr = formatThaiDateTime(new Date());
+    const previousDocs = documents;
+    const nextDocs = documents.map((d) =>
+      String(d.id) === String(doc.id)
+        ? { ...d, ackStatus: 'รับทราบแล้ว', ackTime: ackTimeStr }
+        : d
+    );
+    setDocuments(nextDocs);
+    saveDocsCache(nextDocs);
+    pushToast('success', 'รับทราบงานแล้ว', `บันทึกเวลารับทราบ: ${ackTimeStr}`);
+
+    enqueueBackgroundWrite(
+      async () => {
+        await callDriveApi({
+          action: 'update',
+          id: doc.id,
+          type: doc.type,
+          updates: {
+            ack_status: 'รับทราบแล้ว',
+            ack_time: ackTimeStr,
+          },
+        });
+      },
+      () => {
+        setDocuments(previousDocs);
+        saveDocsCache(previousDocs);
+      },
+      'บันทึกการรับทราบงานลง Google Drive ไม่สำเร็จ'
+    );
+  };
+
+  const handleConfirmStatusUpdate = async (newStatus: string) => {
+    if (!statusTargetDoc) return;
+    const targetDoc = statusTargetDoc;
+    const previousDocs = documents;
+    const updateTimeStr = formatThaiDateTime(new Date());
+
+    const nextDocs = documents.map((d) =>
+      String(d.id) === String(targetDoc.id)
+        ? {
+            ...d,
+            status: newStatus,
+            ackStatus: 'รับทราบแล้ว',
+            ackTime: updateTimeStr,
+          }
+        : d
+    );
+    setDocuments(nextDocs);
+    saveDocsCache(nextDocs);
+    setStatusTargetDoc(null);
+    setIsActionBusy(false);
+    pushToast('success', 'อัปเดตสถานะแล้ว', `สถานะใหม่: ${newStatus} (${updateTimeStr})`);
+
+    enqueueBackgroundWrite(
+      async () => {
+        await callDriveApi({
+          action: 'update',
+          id: targetDoc.id,
+          type: targetDoc.type,
+          updates: {
+            status: newStatus,
+            ack_status: 'รับทราบแล้ว',
+            ack_time: updateTimeStr,
+          },
+        });
+      },
+      () => {
+        setDocuments(previousDocs);
+        saveDocsCache(previousDocs);
+      },
+      'อัปเดตสถานะใน Google Drive ไม่สำเร็จ'
+    );
+  };
+
+  const handleQuickDetailSave = async (payload: QuickDetailSavePayload) => {
+    if (!isAdmin) return;
+
+    let uploadedFileName = '';
+    let uploadedFileUrl = '';
+
+    if (payload.selectedFile) {
+      setIsSubmittingDoc(true);
+      setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
+      try {
+        const base64Data = await fileToBase64Data(payload.selectedFile);
+        const uploadRes = await callDriveApi({
+          action: 'uploadFile',
+          fileData: base64Data,
+          mimeType: payload.selectedFile.type || 'application/octet-stream',
+          fileName: payload.selectedFile.name,
+        });
+        if (!uploadRes.fileUrl) {
+          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
+        }
+        uploadedFileName = payload.selectedFile.name;
+        uploadedFileUrl = uploadRes.fileUrl;
+      } catch (err) {
+        setIsSubmittingDoc(false);
+        setUploadPhaseLabel('');
+        pushToast(
+          'error',
+          'อัปโหลดไฟล์ไม่สำเร็จ',
+          err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
+        );
+        return;
+      } finally {
+        setIsSubmittingDoc(false);
+        setUploadPhaseLabel('');
+      }
+    }
+
+    const previousDocs = documents;
+    const previousDetail = detailDoc;
+    const existingDoc = documents.find((d) => String(d.id) === String(payload.id));
+    const statusChanged = Boolean(existingDoc && existingDoc.status !== payload.status);
+    const statusUpdateTime = statusChanged ? formatThaiDateTime(new Date()) : '';
+
+    const updates: Record<string, unknown> = {
+      assignee: payload.assignee,
+      status: payload.status,
+      due_date: payload.dueDate,
+    };
+
+    if (statusChanged) {
+      updates.ack_status = 'รับทราบแล้ว';
+      updates.ack_time = statusUpdateTime;
+    }
+
+    if (payload.removeExistingAttachment) {
+      updates.file_name = '';
+      updates.file_url = '';
+    }
+    if (uploadedFileName && uploadedFileUrl) {
+      updates.file_name = uploadedFileName;
+      updates.file_url = uploadedFileUrl;
+    }
+
+    const nextDocs = documents.map((d) => {
+      if (String(d.id) !== String(payload.id)) return d;
+      const updated: SarabanDoc = {
+        ...d,
+        assignee: payload.assignee,
+        status: payload.status,
+        dueDate: payload.dueDate,
+      };
+      if (statusChanged) {
+        updated.ackStatus = 'รับทราบแล้ว';
+        updated.ackTime = statusUpdateTime;
+      }
+      if (payload.removeExistingAttachment) {
+        updated.fileName = '';
+        updated.fileData = '';
+      }
+      if (uploadedFileName && uploadedFileUrl) {
+        updated.fileName = uploadedFileName;
+        updated.fileData = uploadedFileUrl;
+      }
+      return updated;
+    });
+
+    setDocuments(nextDocs);
+    saveDocsCache(nextDocs);
+    const updatedDetail = nextDocs.find((d) => String(d.id) === String(payload.id)) || null;
+    setDetailDoc(updatedDetail);
+    pushToast('success', 'บันทึกข้อมูลเพิ่มเติมสำเร็จ', 'อัปเดตการมอบหมายและสถานะเรียบร้อยแล้ว');
+
+    enqueueBackgroundWrite(
+      async () => {
+        await callDriveApi({
+          action: 'update',
+          id: payload.id,
+          type: existingDoc?.type,
+          updates,
+        });
+      },
+      () => {
+        setDocuments(previousDocs);
+        saveDocsCache(previousDocs);
+        setDetailDoc(previousDetail);
+      },
+      'บันทึกข้อมูลเพิ่มเติมลง Google Drive ไม่สำเร็จ'
+    );
   };
 
   const handleImportExcel = async (type: DocType, yearStr: string, file: File) => {
@@ -624,7 +800,7 @@ export default function App() {
               activeTab={activeTab}
               currentUser={currentUser}
               docCount={documents.length}
-              isSyncing={isSyncing}
+              isSyncing={isSyncing || pendingWriteCount > 0}
               syncError={syncError}
               onSync={() => syncFromDrive({ force: true })}
               onOpenNewDoc={handleOpenNewDoc}

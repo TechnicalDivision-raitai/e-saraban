@@ -591,7 +591,8 @@ function doPost(e) {
     if (action === 'update') {
       const targetId = String(payload.id || '');
       const updates = payload.updates || {};
-      const found = findRecordAcrossTabs_(ss, targetId);
+      const preferredType = payload.type || updates.type || '';
+      const found = findRecordAcrossTabs_(ss, targetId, preferredType);
 
       if (!found) {
         return jsonResponse_({ status: 'error', message: 'ไม่พบรายการเอกสาร ID: ' + targetId });
@@ -620,7 +621,8 @@ function doPost(e) {
 
     if (action === 'delete') {
       const targetId = String(payload.id || '');
-      const found = findRecordAcrossTabs_(ss, targetId);
+      const preferredType = payload.type || '';
+      const found = findRecordAcrossTabs_(ss, targetId, preferredType);
       if (!found) {
         return jsonResponse_({ status: 'error', message: 'ไม่พบรายการเอกสาร ID: ' + targetId });
       }
