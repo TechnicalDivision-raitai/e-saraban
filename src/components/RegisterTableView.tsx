@@ -149,6 +149,15 @@ export function RegisterTableView({
       rows = [...rows].sort((a, b) => {
         const getVal = (doc: SarabanDoc) => {
           if (sortState.field === 'date') return getInboxDate(doc);
+          if (sortState.field === 'regNo' && tabId === 'myInbox') {
+            if (doc.type === 'outgoing' || doc.type === 'orders' || doc.type === 'memos') {
+              return doc.docNumber || '';
+            }
+            if (doc.type === 'vouchers') {
+              return doc.voucherNo || '';
+            }
+            return formatRegDisplay(doc);
+          }
           if (sortState.field === 'subject') {
             return doc.subject || doc.voucherProject || doc.formName || '';
           }
@@ -649,7 +658,7 @@ export function RegisterTableView({
                         className={rowClass}
                       >
                         <td className="p-3.5 font-bold text-[#574F7D] whitespace-nowrap tabular-nums">
-                          {d.type === 'outgoing'
+                          {d.type === 'outgoing' || d.type === 'orders' || d.type === 'memos'
                             ? d.docNumber || '-'
                             : d.type === 'vouchers'
                             ? d.voucherNo || '-'
