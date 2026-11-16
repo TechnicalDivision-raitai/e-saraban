@@ -57,8 +57,10 @@ export function TopBar({
           <PanelLeft className="w-4 h-4" />
         </button>
 
-        <h1 className="text-base sm:text-lg font-bold text-[#242038] truncate whitespace-nowrap">
-          {tabMeta.title}
+        <h1 className="text-xs sm:text-[13px] flex items-center gap-2 truncate whitespace-nowrap">
+          <span className="text-[#6E678A] font-normal">ระบบงานสารบรรณ</span>
+          <span className="text-[#B5B1C8] font-normal">/</span>
+          <span className="text-[#242038] font-semibold truncate">{tabMeta.title}</span>
         </h1>
       </div>
 
