@@ -187,6 +187,18 @@ export function DocumentWizardModal({
       outgoingRecipients: getUniqueNormalizedSuggestions(
         documents.filter((d) => d.type === 'outgoing').map((d) => d.sender)
       ),
+      memoWorks: getUniqueNormalizedSuggestions([
+        'งานธุรการ',
+        'งานโยธา',
+        'งานประปา',
+        'งานไฟฟ้า',
+        'งานผังเมือง',
+        'งานสาธารณูปโภค',
+        'งานสารบรรณ',
+        ...documents
+          .filter((d) => d.type === 'memos' || d.type === 'forms')
+          .map((d) => d.memoWork),
+      ]),
       memoAddressees: getUniqueNormalizedSuggestions(
         documents.filter((d) => d.type === 'memos').map((d) => d.sender)
       ),
@@ -710,10 +722,10 @@ export function DocumentWizardModal({
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
                           งาน (ระบุประเภทงาน) *
                         </label>
-                        <input
-                          type="text"
+                        <SmartAutocompleteInput
                           value={memoWork}
-                          onChange={(e) => setMemoWork(e.target.value)}
+                          onChange={setMemoWork}
+                          suggestions={suggestions.memoWorks}
                           placeholder="เช่น งานโยธา, งานธุรการ"
                           className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
