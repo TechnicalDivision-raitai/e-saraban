@@ -20,7 +20,7 @@ import {
   saveDocsCache,
 } from './services/driveApi';
 import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
-import { ADMIN_USER, STAFF_USER } from './types/saraban';
+import { ADMIN_USER, STAFF_USER, TAB_TITLES } from './types/saraban';
 import {
   exportRegisterCSV,
   fileToBase64Data,
@@ -33,12 +33,46 @@ import {
   parseExcelToImportRecords,
 } from './utils/sarabanUtils';
 
+const AUTH_SESSION_STORAGE_KEY = 'esaraban_auth_session_v1';
+const ACTIVE_TAB_STORAGE_KEY = 'esaraban_active_tab_v1';
+
+function loadSavedAuthSession(): { user: UserSession; isAuthenticated: boolean } {
+  try {
+    const raw = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) return { user: ADMIN_USER, isAuthenticated: false };
+    const parsed = JSON.parse(raw) as { role?: string };
+    if (parsed?.role === 'admin') {
+      return { user: ADMIN_USER, isAuthenticated: true };
+    }
+    if (parsed?.role === 'staff') {
+      return { user: STAFF_USER, isAuthenticated: true };
+    }
+  } catch {}
+  return { user: ADMIN_USER, isAuthenticated: false };
+}
+
+function loadSavedActiveTab(isAdminSession: boolean): TabId {
+  try {
+    const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as TabId | null;
+    if (saved && Object.prototype.hasOwnProperty.call(TAB_TITLES, saved)) {
+      if (saved === 'myInbox' && !isAdminSession) {
+        return 'dashboard';
+      }
+      return saved;
+    }
+  } catch {}
+  return 'dashboard';
+}
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserSession>(ADMIN_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const initialAuth = useMemo(() => loadSavedAuthSession(), []);
+  const [currentUser, setCurrentUser] = useState<UserSession>(initialAuth.user);
+  const [isAuthenticated, setIsAuthenticated] = useState(initialAuth.isAuthenticated);
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    loadSavedActiveTab(initialAuth.user.role === 'admin')
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('esaraban_sidebar_collapsed') === '1';
@@ -224,6 +258,9 @@ export default function App() {
     setCurrentUser(ADMIN_USER);
     setIsAuthenticated(true);
     setShowRoleModal(false);
+    try {
+      localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify({ role: 'admin' }));
+    } catch {}
     syncFromDrive({ silent: documents.length > 0 });
     pushToast('success', 'เข้าสู่ระบบสำเร็จ', 'สิทธิ์ผู้ดูแลระบบ (นส. นิศาชล คงดี)');
   };
@@ -232,17 +269,33 @@ export default function App() {
     setCurrentUser(STAFF_USER);
     setIsAuthenticated(true);
     setShowRoleModal(false);
-    if (activeTab === 'myInbox') setActiveTab('dashboard');
+    try {
+      localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify({ role: 'staff' }));
+    } catch {}
+    if (activeTab === 'myInbox') {
+      setActiveTab('dashboard');
+      try {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'dashboard');
+      } catch {}
+    }
     syncFromDrive({ silent: documents.length > 0 });
     pushToast('info', 'เข้าสู่ระบบสำเร็จ', 'สิทธิ์บุคลากร / เจ้าหน้าที่');
   };
 
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setShowRoleModal(false);
+    try {
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    } catch {}
+  };
+
   const handleSelectTab = (tab: TabId) => {
-    if (tab === 'myInbox' && !isAdmin) {
-      setActiveTab('dashboard');
-      return;
-    }
-    setActiveTab(tab);
+    const nextTab: TabId = tab === 'myInbox' && !isAdmin ? 'dashboard' : tab;
+    setActiveTab(nextTab);
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextTab);
+    } catch {}
   };
 
   const myInboxCount = useMemo(() => {
@@ -794,10 +847,7 @@ export default function App() {
             myInboxCount={myInboxCount}
             overdueCount={overdueCount}
             onOpenRoleSwitch={() => setShowRoleModal(true)}
-            onLogout={() => {
-              setIsAuthenticated(false);
-              setShowRoleModal(false);
-            }}
+            onLogout={handleLogout}
           />
 
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
