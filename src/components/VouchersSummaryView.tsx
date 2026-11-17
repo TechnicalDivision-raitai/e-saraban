@@ -60,7 +60,7 @@ export function VouchersSummaryView({ documents, onViewDoc }: VouchersSummaryVie
   }, [filteredVouchers]);
 
   return (
-    <div className="space-y-5 max-w-[1600px] mx-auto">
+    <div className="space-y-5 w-full">
       {/* Year Filter */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3 min-w-0">

@@ -329,10 +329,10 @@ export function RegisterTableView({
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto">
-      <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden">
+    <div className="w-full flex-1 flex flex-col min-h-0">
+      <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden flex-1 flex flex-col min-h-0">
         {/* Heading & Filter Bar */}
-        <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5">
+        <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h2 className="text-base sm:text-lg font-bold text-[#242038]">
@@ -468,7 +468,7 @@ export function RegisterTableView({
         </div>
 
         {/* Table Container */}
-        <div className="overflow-auto max-h-[calc(100dvh-16.5rem)] saraban-scroll">
+        <div className="flex-1 min-h-0 overflow-auto saraban-scroll">
           <table className="w-full min-w-[960px] text-left border-collapse">
             <thead>
               {tabId === 'myInbox' && (

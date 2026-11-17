@@ -25,6 +25,7 @@ import {
   exportRegisterCSV,
   fileToBase64Data,
   formatThaiDateTime,
+  getNextMemoDocNumber,
   getNextRegNoForYear,
   getUniqueNormalizedSuggestions,
   isOverdueDoc,
@@ -433,6 +434,10 @@ export default function App() {
         payload.type === 'incoming'
           ? getNextRegNoForYear(documents, 'incoming', payload.yearStr)
           : '-';
+      const enforcedDocNumber =
+        payload.type === 'memos'
+          ? getNextMemoDocNumber(documents, payload.docDate)
+          : payload.docNumber;
       const newId = Date.now();
 
       const rawRecord: RawSarabanRecord = {
@@ -444,7 +449,7 @@ export default function App() {
         receive_date: payload.type === 'incoming' ? payload.receiveDate || '-' : '-',
         sender: payload.sender,
         urgency: payload.type === 'incoming' ? payload.urgency : 'ปกติ',
-        doc_number: payload.docNumber,
+        doc_number: enforcedDocNumber,
         doc_date: payload.docDate,
         subject: payload.subject,
         status: payload.status,
@@ -808,7 +813,7 @@ export default function App() {
               onToggleSidebar={handleToggleSidebar}
             />
 
-            <main className="no-print flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 md:p-6 pb-20 lg:pb-6 saraban-scroll">
+            <main className="no-print flex-1 min-h-0 flex flex-col overflow-y-auto p-3.5 sm:p-4 lg:p-5 pb-20 lg:pb-5 saraban-scroll">
               {activeTab === 'dashboard' && (
                 <DashboardView
                   documents={documents}

@@ -20,8 +20,11 @@ import {
 import {
   getAvailableYears,
   getCurrentYearForType,
+  getNextMemoDocNumber,
   getNextRegNoForYear,
+  getTodayISO,
   getUniqueNormalizedSuggestions,
+  normalizeDateToISO,
   normalizeWhitespace,
 } from '../utils/sarabanUtils';
 import { SmartAutocompleteInput } from './SmartAutocompleteInput';
@@ -225,6 +228,26 @@ export function DocumentWizardModal({
     return `${next} - ${yearStr}`;
   }, [docType, editingDoc, documents, yearStr]);
 
+  const autoMemoDocNumber = useMemo(() => {
+    if (docType !== 'memos') return '';
+    const effectiveDate = docDate || getTodayISO();
+    if (
+      editingDoc &&
+      editingDoc.type === 'memos' &&
+      normalizeDateToISO(effectiveDate) === normalizeDateToISO(editingDoc.docDate) &&
+      /^อบ\s*87303\/\d{2}-\d{2}\/\d+$/.test(String(editingDoc.docNumber || '').trim())
+    ) {
+      return String(editingDoc.docNumber).trim();
+    }
+    return getNextMemoDocNumber(documents, effectiveDate, editingDoc?.id);
+  }, [docType, docDate, documents, editingDoc]);
+
+  useEffect(() => {
+    if (docType === 'memos' && autoMemoDocNumber && docNumber !== autoMemoDocNumber) {
+      setDocNumber(autoMemoDocNumber);
+    }
+  }, [docType, autoMemoDocNumber, docNumber]);
+
   if (!isOpen) return null;
 
   const handleSelectType = (nextType: DocType) => {
@@ -233,6 +256,9 @@ export function DocumentWizardModal({
       setStatus(['outgoing', 'orders', 'memos'].includes(nextType) ? 'ออกเอกสาร' : 'ลงรับแล้ว');
       if (DOC_TYPE_META[nextType].yearKind !== 'none') {
         setYearStr(getCurrentYearForType(nextType));
+      }
+      if (nextType === 'memos' && !docDate) {
+        setDocDate(getTodayISO());
       }
     }
   };
@@ -256,8 +282,8 @@ export function DocumentWizardModal({
       if (!subject.trim()) return 'กรุณาระบุเรื่องคำสั่ง';
     } else if (docType === 'memos') {
       if (!memoWork.trim()) return 'กรุณาระบุประเภทงาน';
-      if (!docNumber.trim()) return 'กรุณาระบุเลขที่บันทึก';
       if (!docDate) return 'กรุณาระบุลงวันที่';
+      if (!autoMemoDocNumber.trim()) return 'กรุณาระบุเลขที่บันทึก';
       if (!sender.trim()) return 'กรุณาระบุช่องเรียน';
       if (!subject.trim()) return 'กรุณาระบุเรื่องบันทึกข้อความ';
     } else if (docType === 'forms') {
@@ -300,8 +326,8 @@ export function DocumentWizardModal({
     receiveDate,
     sender: normalizeWhitespace(sender),
     urgency,
-    docNumber: docNumber.trim(),
-    docDate,
+    docNumber: docType === 'memos' ? autoMemoDocNumber.trim() : docNumber.trim(),
+    docDate: docType === 'memos' ? docDate || getTodayISO() : docDate,
     subject: subject.trim(),
     status,
     assignee: normalizeWhitespace(assignee) || 'นิศาชล คงดี',
@@ -512,6 +538,11 @@ export function DocumentWizardModal({
                   {docType === 'incoming' && (
                     <span className="px-2.5 py-1 rounded-lg bg-[#6B6293] text-white text-xs font-bold tabular-nums">
                       เลขรับ: {previewRegNo}
+                    </span>
+                  )}
+                  {docType === 'memos' && (
+                    <span className="px-2.5 py-1 rounded-lg bg-[#6B6293] text-white text-xs font-bold tabular-nums">
+                      เลขที่บันทึก: {autoMemoDocNumber}
                     </span>
                   )}
                 </div>
@@ -732,14 +763,15 @@ export function DocumentWizardModal({
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
-                          เลขที่บันทึก *
+                          เลขที่บันทึก (รันอัตโนมัติตามวันที่) *
                         </label>
                         <input
                           type="text"
-                          value={docNumber}
-                          onChange={(e) => setDocNumber(e.target.value)}
-                          placeholder="เช่น วส 001/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          value={autoMemoDocNumber}
+                          readOnly
+                          title="ระบบรันเลขที่บันทึกข้อความให้อัตโนมัติตามวันที่ลงหนังสือ"
+                          placeholder="อบ 87303/MM-DD/01"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] bg-[#F5F4FA] text-[#3F3668] font-bold tabular-nums text-sm cursor-not-allowed focus:outline-none"
                         />
                       </div>
                     </div>

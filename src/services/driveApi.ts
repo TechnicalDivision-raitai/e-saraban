@@ -1,5 +1,5 @@
 import type { RawSarabanRecord, SarabanDoc } from '../types/saraban';
-import { docToRawRecord, mapRawRecordToDoc } from '../utils/sarabanUtils';
+import { docToRawRecord, mapRawRecordToDoc, normalizeMemoDocNumbers } from '../utils/sarabanUtils';
 
 export const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
@@ -39,7 +39,7 @@ export function loadDocsCache(): SarabanDoc[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { docs?: SarabanDoc[] };
     if (parsed && Array.isArray(parsed.docs)) {
-      return parsed.docs;
+      return normalizeMemoDocNumbers(parsed.docs);
     }
   } catch {}
   return [];
@@ -51,7 +51,7 @@ export function loadBackupSnapshot(): SarabanDoc[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { docs?: SarabanDoc[] };
     if (parsed && Array.isArray(parsed.docs)) {
-      return parsed.docs;
+      return normalizeMemoDocNumbers(parsed.docs);
     }
   } catch {}
   return [];
@@ -136,7 +136,7 @@ interface CompactListResponse {
 function parseDriveListPayload(result: CompactListResponse): SarabanDoc[] {
   if (result.format === 'compact' && Array.isArray(result.headers) && Array.isArray(result.rows)) {
     const headers = result.headers;
-    return result.rows.map((row) => {
+    const docs = result.rows.map((row) => {
       const obj: Record<string, unknown> = {};
       headers.forEach((key, idx) => {
         if (row[idx] !== undefined && row[idx] !== null && row[idx] !== '') {
@@ -145,9 +145,10 @@ function parseDriveListPayload(result: CompactListResponse): SarabanDoc[] {
       });
       return mapRawRecordToDoc(obj as unknown as RawSarabanRecord);
     });
+    return normalizeMemoDocNumbers(docs);
   }
   const allRows = Array.isArray(result.data) ? result.data : [];
-  return allRows.map(mapRawRecordToDoc);
+  return normalizeMemoDocNumbers(allRows.map(mapRawRecordToDoc));
 }
 
 export async function fetchDocumentsFromDrive(

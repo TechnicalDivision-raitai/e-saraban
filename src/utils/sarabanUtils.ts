@@ -338,6 +338,115 @@ export function getNextRegNoForYear(docs: SarabanDoc[], type: string, yearStr: s
   return maxNo + 1;
 }
 
+export const MEMO_DOC_PREFIX = 'อบ 87303';
+
+export function getNextMemoDocNumber(
+  docs: SarabanDoc[],
+  docDateInput?: string,
+  excludeId?: string | number | null
+): string {
+  const iso = normalizeDateToISO(docDateInput) || getTodayISO();
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const [, yearPart, monthPart, dayPart] = match;
+  const dateToken = `${monthPart}-${dayPart}`;
+  const prefix = `${MEMO_DOC_PREFIX}/${dateToken}/`;
+  const escapedToken = dateToken.replace('-', '\\-');
+  const pattern = new RegExp(`^อบ\\s*87303\\/${escapedToken}\\/(\\d+)$`);
+
+  let maxSeq = 0;
+  let sameDateCount = 0;
+
+  docs.forEach((d) => {
+    if (d.type !== 'memos') return;
+    if (excludeId !== undefined && excludeId !== null && String(d.id) === String(excludeId)) {
+      return;
+    }
+    const dIso = normalizeDateToISO(d.docDate);
+    const dYear = dIso ? dIso.slice(0, 4) : '';
+    const rawNum = String(d.docNumber || '').trim();
+    const numMatch = rawNum.match(pattern);
+
+    if (dIso === iso) {
+      sameDateCount += 1;
+      if (numMatch) {
+        const parsed = parseInt(numMatch[1], 10);
+        if (!Number.isNaN(parsed) && parsed > maxSeq) {
+          maxSeq = parsed;
+        }
+      }
+    } else if ((!dYear || dYear === yearPart) && numMatch) {
+      const parsed = parseInt(numMatch[1], 10);
+      if (!Number.isNaN(parsed) && parsed > maxSeq) {
+        maxSeq = parsed;
+      }
+    }
+  });
+
+  const nextSeq = Math.max(maxSeq, sameDateCount) + 1;
+  return `${prefix}${String(nextSeq).padStart(2, '0')}`;
+}
+
+export function normalizeMemoDocNumbers(docs: SarabanDoc[]): SarabanDoc[] {
+  const validPattern = /^อบ\s*87303\/(\d{2})-(\d{2})\/(\d+)$/;
+  const usedByDate = new Map<string, Set<number>>();
+
+  docs.forEach((d) => {
+    if (d.type !== 'memos') return;
+    const iso = normalizeDateToISO(d.docDate);
+    if (!iso) return;
+    const m = String(d.docNumber || '').trim().match(validPattern);
+    if (m) {
+      const seq = parseInt(m[3], 10);
+      if (!Number.isNaN(seq)) {
+        if (!usedByDate.has(iso)) usedByDate.set(iso, new Set());
+        usedByDate.get(iso)!.add(seq);
+      }
+    }
+  });
+
+  const memoIndices = docs
+    .map((d, idx) => ({ d, idx }))
+    .filter(({ d }) => d.type === 'memos')
+    .sort((a, b) => Number(a.d.id || 0) - Number(b.d.id || 0));
+
+  const replacements = new Map<number, { docNumber: string; docDate: string }>();
+
+  memoIndices.forEach(({ d, idx }) => {
+    const iso = normalizeDateToISO(d.docDate);
+    if (!iso) return;
+    const [, , mm, dd] = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+    if (!mm || !dd) return;
+
+    const trimmed = String(d.docNumber || '').trim();
+    const m = trimmed.match(validPattern);
+    if (m && m[1] === mm && m[2] === dd) {
+      const canonical = `${MEMO_DOC_PREFIX}/${mm}-${dd}/${String(parseInt(m[3], 10)).padStart(2, '0')}`;
+      if (canonical !== d.docNumber || iso !== d.docDate) {
+        replacements.set(idx, { docNumber: canonical, docDate: iso });
+      }
+      return;
+    }
+
+    if (!usedByDate.has(iso)) usedByDate.set(iso, new Set());
+    const usedSet = usedByDate.get(iso)!;
+    let seq = 1;
+    while (usedSet.has(seq)) {
+      seq += 1;
+    }
+    usedSet.add(seq);
+    const formatted = `${MEMO_DOC_PREFIX}/${mm}-${dd}/${String(seq).padStart(2, '0')}`;
+    replacements.set(idx, { docNumber: formatted, docDate: iso });
+  });
+
+  if (replacements.size === 0) return docs;
+
+  return docs.map((d, idx) => {
+    const rep = replacements.get(idx);
+    return rep ? { ...d, docNumber: rep.docNumber, docDate: rep.docDate } : d;
+  });
+}
+
 export function formatRegDisplay(doc: SarabanDoc): string {
   if (doc.regNo !== undefined && doc.regNo !== null && String(doc.regNo) !== '-' && String(doc.regNo) !== '') {
     return doc.yearStr ? `${doc.regNo} - ${doc.yearStr}` : String(doc.regNo);
