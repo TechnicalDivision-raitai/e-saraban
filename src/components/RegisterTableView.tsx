@@ -16,6 +16,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import type { SarabanProcurementSyncRecord } from '../services/procurementSyncApi';
+import { formatProcurementDisplayTitle } from '../services/procurementSyncApi';
 import type { SarabanProjectSyncRecord } from '../services/projectSyncApi';
 import { getQueueStatusMeta } from '../services/projectSyncApi';
 import type { DocType, SarabanDoc, SortState, TabId, UserSession } from '../types/saraban';
@@ -49,6 +51,7 @@ interface RegisterTableViewProps {
   tabId: RegisterTabId;
   documents: SarabanDoc[];
   projectSyncMap?: Record<string, SarabanProjectSyncRecord>;
+  procurementSyncMap?: Record<string, SarabanProcurementSyncRecord>;
   currentUser: UserSession;
   isLoading: boolean;
   loadError: string;
@@ -72,6 +75,7 @@ export function RegisterTableView({
   tabId,
   documents,
   projectSyncMap = {},
+  procurementSyncMap = {},
   currentUser,
   isLoading,
   loadError,
@@ -258,33 +262,73 @@ export function RegisterTableView({
 
   const renderProjectSyncTag = (doc: SarabanDoc) => {
     const rec = projectSyncMap[String(doc.id)];
-    if (!rec) return null;
-    const statusMeta = getQueueStatusMeta(rec.queueStatus);
-    const reasonText =
-      statusMeta.status === 'rejected' && rec.rejectReason
-        ? ` (${rec.rejectReason})`
-        : '';
+    const procRec = procurementSyncMap[String(doc.id)];
+    if (!rec && !procRec) return null;
+
     return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onViewDoc(doc);
-        }}
-        title={`โครงการ: [${rec.projectCode}] ${rec.projectName} · สถานะ: ${statusMeta.label}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/ลบคิว`}
-        className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums transition-colors ${statusMeta.badgeClass}`}
-      >
-        {statusMeta.status === 'approved' ? (
-          <CheckCircle2 className="w-3 h-3 shrink-0" />
-        ) : statusMeta.status === 'rejected' ? (
-          <XCircle className="w-3 h-3 shrink-0" />
-        ) : (
-          <Clock className="w-3 h-3 shrink-0" />
-        )}
-        <span>
-          {statusMeta.shortLabel}: {rec.queueId}
-        </span>
-      </button>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {rec && (() => {
+          const statusMeta = getQueueStatusMeta(rec.queueStatus);
+          const reasonText =
+            statusMeta.status === 'rejected' && rec.rejectReason ? ` (${rec.rejectReason})` : '';
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDoc(doc);
+              }}
+              title={`ระบบงานโครงการ: [${rec.projectCode}] ${rec.projectName} · สถานะ: ${statusMeta.label}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/ลบคิว`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums transition-colors ${statusMeta.badgeClass}`}
+            >
+              {statusMeta.status === 'approved' ? (
+                <CheckCircle2 className="w-3 h-3 shrink-0" />
+              ) : statusMeta.status === 'rejected' ? (
+                <XCircle className="w-3 h-3 shrink-0" />
+              ) : (
+                <Clock className="w-3 h-3 shrink-0" />
+              )}
+              <span>
+                โครงการ · {statusMeta.shortLabel}: {rec.queueId}
+              </span>
+            </button>
+          );
+        })()}
+
+        {procRec && (() => {
+          const statusMeta = getQueueStatusMeta(procRec.queueStatus);
+          const reasonText =
+            statusMeta.status === 'rejected' && procRec.rejectReason
+              ? ` (${procRec.rejectReason})`
+              : '';
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDoc(doc);
+              }}
+              title={`ระบบจัดซื้อจัดจ้าง: ${formatProcurementDisplayTitle({
+                name: procRec.procurementName,
+                projectCode: procRec.projectCode,
+                procurementId: procRec.procurementId,
+              })} · สถานะ: ${statusMeta.label}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/ลบคิว`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums transition-colors ${statusMeta.badgeClass}`}
+            >
+              {statusMeta.status === 'approved' ? (
+                <CheckCircle2 className="w-3 h-3 shrink-0" />
+              ) : statusMeta.status === 'rejected' ? (
+                <XCircle className="w-3 h-3 shrink-0" />
+              ) : (
+                <Clock className="w-3 h-3 shrink-0" />
+              )}
+              <span>
+                จัดซื้อฯ · {statusMeta.shortLabel}: {procRec.queueId}
+              </span>
+            </button>
+          );
+        })()}
+      </div>
     );
   };
 
@@ -466,13 +510,13 @@ export function RegisterTableView({
                   type="button"
                   disabled={isRefreshingProjectQueues}
                   onClick={onRefreshProjectQueues}
-                  title="ดึงสถานะคิวล่าสุด (Pending / Approved / Rejected) จากระบบงานโครงการ"
+                  title="ดึงสถานะคิวล่าสุด (Pending / Approved / Rejected) จากระบบงานโครงการและระบบจัดซื้อจัดจ้าง"
                   className="bg-[#E0F2FE] hover:bg-[#BAE6FD] border border-[#7DD3FC] text-[#0C4A6E] px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 ${isRefreshingProjectQueues ? 'animate-spin' : ''}`}
                   />
-                  <span>เช็คสถานะโครงการ</span>
+                  <span>เช็คสถานะโครงการ/จัดซื้อฯ</span>
                   {pendingProjectQueueCount > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full bg-[#FEF3C7] border border-[#F59E0B] text-[#78350F] text-[11px] font-bold tabular-nums">
                       รอ {pendingProjectQueueCount}

@@ -20,6 +20,24 @@ import {
   saveDocsCache,
 } from './services/driveApi';
 import type {
+  ProcurementSyncSelection,
+  SarabanProcurementSyncRecord,
+} from './services/procurementSyncApi';
+import {
+  deleteProcurementQueue,
+  fetchProcurementOptions,
+  fetchProcurementQueueStatuses,
+  formatProcurementDisplayTitle,
+  getProcurementSyncRevision,
+  incrementProcurementSyncRevision,
+  loadProcurementSyncMap,
+  markProcurementQueueAsDeleted,
+  pushProcurementQueue,
+  reconcileProcurementSyncMap,
+  removeProcurementSyncRecord,
+  saveProcurementSyncRecord,
+} from './services/procurementSyncApi';
+import type {
   ProjectSyncSelection,
   SarabanAttachmentMeta,
   SarabanProjectSyncRecord,
@@ -127,6 +145,13 @@ export default function App() {
   const [isDeletingProjectQueue, setIsDeletingProjectQueue] = useState(false);
   const [isRefreshingQueueStatuses, setIsRefreshingQueueStatuses] = useState(false);
 
+  const [procurementSyncMap, setProcurementSyncMap] = useState<
+    Record<string, SarabanProcurementSyncRecord>
+  >(() => loadProcurementSyncMap());
+  const [isSyncingToProcurement, setIsSyncingToProcurement] = useState(false);
+  const [isDeletingProcurementQueue, setIsDeletingProcurementQueue] = useState(false);
+  const [isRefreshingProcurementStatuses, setIsRefreshingProcurementStatuses] = useState(false);
+
   const [coverSheetDoc, setCoverSheetDoc] = useState<SarabanDoc | null>(null);
   const [registerReport, setRegisterReport] = useState<{
     title: string;
@@ -138,11 +163,15 @@ export default function App() {
 
   const abortRef = useRef<AbortController | null>(null);
   const queueSyncAbortRef = useRef<AbortController | null>(null);
+  const procurementSyncAbortRef = useRef<AbortController | null>(null);
   const lastLoadTimeRef = useRef<number>(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingWriteCountRef = useRef<number>(0);
   const documentsRef = useRef<SarabanDoc[]>(documents);
   const projectSyncMapRef = useRef<Record<string, SarabanProjectSyncRecord>>(projectSyncMap);
+  const procurementSyncMapRef = useRef<Record<string, SarabanProcurementSyncRecord>>(
+    procurementSyncMap
+  );
 
   useEffect(() => {
     documentsRef.current = documents;
@@ -151,6 +180,10 @@ export default function App() {
   useEffect(() => {
     projectSyncMapRef.current = projectSyncMap;
   }, [projectSyncMap]);
+
+  useEffect(() => {
+    procurementSyncMapRef.current = procurementSyncMap;
+  }, [procurementSyncMap]);
 
   const pushToast = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
@@ -264,6 +297,7 @@ export default function App() {
   );
 
   const lastQueueSyncAtRef = useRef<number>(0);
+  const lastProcurementSyncAtRef = useRef<number>(0);
 
   const syncProjectQueueStatuses = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -360,6 +394,105 @@ export default function App() {
     [pushToast]
   );
 
+  const syncProcurementQueueStatuses = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const { silent = false } = options;
+      if (procurementSyncAbortRef.current) {
+        if (silent) return;
+        try {
+          procurementSyncAbortRef.current.abort();
+        } catch {}
+      }
+      const controller = new AbortController();
+      procurementSyncAbortRef.current = controller;
+      setIsRefreshingProcurementStatuses(true);
+      const fetchStartedAt = Date.now();
+
+      try {
+        const remote = await fetchProcurementQueueStatuses(controller.signal);
+        if (controller.signal.aborted) return;
+
+        const existingDocIds = new Set(documentsRef.current.map((d) => String(d.id)));
+        const hasMissingNames = remote.items.some((item) => {
+          const existing = Object.values(procurementSyncMapRef.current).find(
+            (r) => r.queueId === item.queueId || r.procurementId === item.procurementId
+          );
+          return (
+            !existing ||
+            !existing.procurementName ||
+            existing.procurementName.startsWith('รายการจัดซื้อฯ ')
+          );
+        });
+
+        let procurementNameById: Map<string, string> | undefined;
+        if (hasMissingNames && remote.items.length > 0) {
+          try {
+            const procOptions = await fetchProcurementOptions('all', controller.signal);
+            procurementNameById = new Map(procOptions.map((p) => [p.id, p.name]));
+          } catch {}
+        }
+
+        const reconciled = reconcileProcurementSyncMap(procurementSyncMapRef.current, remote, {
+          existingDocIds,
+          procurementNameById,
+          fetchStartedAt,
+        });
+        procurementSyncMapRef.current = reconciled.nextMap;
+        setProcurementSyncMap(reconciled.nextMap);
+        lastProcurementSyncAtRef.current = Date.now();
+
+        if (reconciled.statusChanges.length === 1) {
+          const change = reconciled.statusChanges[0];
+          const meta = getQueueStatusMeta(change.toStatus);
+          pushToast(
+            meta.status === 'approved' ? 'success' : meta.status === 'rejected' ? 'error' : 'info',
+            `อัปเดตสถานะจัดซื้อฯ ${change.queueId}: ${meta.shortLabel}`,
+            meta.status === 'rejected' && change.rejectReason
+              ? `เหตุผล: ${change.rejectReason}`
+              : `[${change.projectCode}]`
+          );
+        } else if (reconciled.statusChanges.length > 1) {
+          pushToast(
+            'success',
+            'อัปเดตสถานะคิวจัดซื้อจัดจ้างแล้ว',
+            `มีการเปลี่ยนแปลงสถานะ ${reconciled.statusChanges.length} รายการ (รอตรวจรับ ${remote.pendingCount} รายการ)`
+          );
+        } else if (reconciled.removedCount > 0) {
+          pushToast(
+            'info',
+            'ซิงค์สถานะคิวจัดซื้อจัดจ้างแล้ว',
+            `ล้างคิวที่ถูกลบจากฝั่งจัดซื้อฯ ออก ${reconciled.removedCount} รายการ`
+          );
+        } else if (!silent) {
+          pushToast(
+            'info',
+            'ตรวจสอบสถานะคิวจัดซื้อจัดจ้างแล้ว',
+            remote.pendingCount > 0
+              ? `มีรายการรอตรวจรับในระบบจัดซื้อจัดจ้าง ${remote.pendingCount} รายการ`
+              : reconciled.hydratedCount > 0
+              ? `ซิงค์ข้อมูลคิวกลับจากระบบจัดซื้อฯ ${reconciled.hydratedCount} รายการ`
+              : 'สถานะคิวจัดซื้อจัดจ้างทั้งหมดเป็นปัจจุบันแล้ว'
+          );
+        }
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return;
+        if (!silent) {
+          pushToast(
+            'error',
+            'ดึงสถานะคิวจัดซื้อจัดจ้างไม่สำเร็จ',
+            err instanceof Error ? err.message : 'ไม่สามารถเชื่อมต่อระบบงานจัดซื้อจัดจ้างได้'
+          );
+        }
+      } finally {
+        if (procurementSyncAbortRef.current === controller) {
+          procurementSyncAbortRef.current = null;
+        }
+        setIsRefreshingProcurementStatuses(false);
+      }
+    },
+    [pushToast]
+  );
+
   const hasSyncedQueuesWithDocsRef = useRef(false);
 
   useEffect(() => {
@@ -375,15 +508,20 @@ export default function App() {
     if (documents.length > 0 && !hasSyncedQueuesWithDocsRef.current) {
       hasSyncedQueuesWithDocsRef.current = true;
       syncProjectQueueStatuses({ silent: true });
+      syncProcurementQueueStatuses({ silent: true });
     }
-  }, [documents.length, syncProjectQueueStatuses]);
+  }, [documents.length, syncProjectQueueStatuses, syncProcurementQueueStatuses]);
 
   useEffect(() => {
     const handleFocusOrVisible = () => {
       if (document.visibilityState === 'hidden') return;
       if (documentsRef.current.length === 0) return;
-      if (Date.now() - lastQueueSyncAtRef.current < 10000) return;
-      syncProjectQueueStatuses({ silent: true });
+      if (Date.now() - lastQueueSyncAtRef.current >= 10000) {
+        syncProjectQueueStatuses({ silent: true });
+      }
+      if (Date.now() - lastProcurementSyncAtRef.current >= 10000) {
+        syncProcurementQueueStatuses({ silent: true });
+      }
     };
     window.addEventListener('focus', handleFocusOrVisible);
     document.addEventListener('visibilitychange', handleFocusOrVisible);
@@ -391,7 +529,7 @@ export default function App() {
       window.removeEventListener('focus', handleFocusOrVisible);
       document.removeEventListener('visibilitychange', handleFocusOrVisible);
     };
-  }, [syncProjectQueueStatuses]);
+  }, [syncProjectQueueStatuses, syncProcurementQueueStatuses]);
 
   const isAdmin = currentUser.role === 'admin' && currentUser.name === 'นิศาชล คงดี';
 
@@ -502,6 +640,14 @@ export default function App() {
     [projectSyncMap]
   );
 
+  const pendingProcurementQueueCount = useMemo(
+    () =>
+      Object.values(procurementSyncMap).filter(
+        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
+      ).length,
+    [procurementSyncMap]
+  );
+
   const syncSarabanDocToProject = useCallback(
     async (params: {
       docId: string | number;
@@ -562,6 +708,78 @@ export default function App() {
         'success',
         res.duplicated ? 'เชื่อมโยงคิวโครงการแล้ว (ข้อมูลเดิม)' : `ส่งเข้าคิวโครงการแล้ว: ${queueId}`,
         `[${params.selection.project.projectCode}] ${params.selection.project.name}`
+      );
+      return record;
+    },
+    [currentUser.name, pushToast]
+  );
+
+  const syncSarabanDocToProcurement = useCallback(
+    async (params: {
+      docId: string | number;
+      selection: ProcurementSyncSelection;
+      bookNo: string;
+      bookDate: string;
+      subject: string;
+      attachment: SarabanAttachmentMeta | null;
+    }) => {
+      if (!params.selection.procurement) {
+        throw new Error('กรุณาเลือกรายการจัดซื้อจัดจ้างที่ต้องการเชื่อมโยง');
+      }
+      if (procurementSyncAbortRef.current) {
+        try {
+          procurementSyncAbortRef.current.abort();
+        } catch {}
+        procurementSyncAbortRef.current = null;
+      }
+      const prevRecord = procurementSyncMapRef.current[String(params.docId)];
+      if (prevRecord && String(prevRecord.queueStatus || '').toLowerCase() === 'rejected') {
+        markProcurementQueueAsDeleted(prevRecord);
+        incrementProcurementSyncRevision(params.docId);
+      }
+
+      const res = await pushProcurementQueue({
+        docId: params.docId,
+        procurement: params.selection.procurement,
+        docCategory: params.selection.docCategory,
+        fields: params.selection.fields,
+        bookNo: params.bookNo,
+        bookDate: params.bookDate,
+        subject: params.subject,
+        attachment: params.attachment,
+        submittedBy: currentUser.name,
+        idempotencyRevision: getProcurementSyncRevision(params.docId),
+      });
+
+      const queueId = res.queueId || `PQ-${Date.now()}`;
+      const record: SarabanProcurementSyncRecord = {
+        docId: String(params.docId),
+        queueId,
+        idempotencyKey: res.idempotencyKey,
+        queueStatus: (res.queueStatus || 'pending').toLowerCase(),
+        procurementId: params.selection.procurement.id,
+        projectCode: params.selection.procurement.projectCode,
+        procurementName: params.selection.procurement.name,
+        fiscalYear: params.selection.procurement.fiscalYear,
+        docCategory: params.selection.docCategory,
+        bookNo: params.bookNo,
+        syncedAt: new Date().toISOString(),
+        duplicated: res.duplicated,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      const updatedMap = saveProcurementSyncRecord(record);
+      procurementSyncMapRef.current = updatedMap;
+      setProcurementSyncMap(updatedMap);
+      pushToast(
+        'success',
+        res.duplicated
+          ? 'เชื่อมโยงคิวจัดซื้อจัดจ้างแล้ว (ข้อมูลเดิม)'
+          : `ส่งเข้าคิวจัดซื้อจัดจ้างแล้ว: ${queueId}`,
+        formatProcurementDisplayTitle({
+          name: params.selection.procurement.name,
+          projectCode: params.selection.procurement.projectCode,
+          procurementId: params.selection.procurement.id,
+        })
       );
       return record;
     },
@@ -722,7 +940,10 @@ export default function App() {
         'บันทึกการแก้ไขลง Google Drive ไม่สำเร็จ'
       );
 
-      if (payload.projectSync?.enabled && payload.projectSync.project) {
+      if (
+        (payload.projectSync?.enabled && payload.projectSync.project) ||
+        (payload.procurementSync?.enabled && payload.procurementSync.procurement)
+      ) {
         const finalFileName = uploadedFileName
           ? uploadedFileName
           : payload.removeExistingAttachment
@@ -741,31 +962,51 @@ export default function App() {
               mimeType: uploadedMimeType || inferMimeTypeFromFileName(finalFileName),
             }
           : null;
+        const resolvedBookNo =
+          payload.type === 'vouchers' ? payload.voucherNo || '-' : payload.docNumber || '-';
+        const resolvedBookDate =
+          payload.type === 'vouchers'
+            ? payload.voucherDate || getTodayISO()
+            : payload.docDate || getTodayISO();
+        const resolvedSubject =
+          payload.type === 'vouchers' ? payload.voucherProject || '-' : payload.subject || '-';
 
-        try {
-          await syncSarabanDocToProject({
-            docId: payload.editId,
-            selection: payload.projectSync,
-            bookNo:
-              payload.type === 'vouchers'
-                ? payload.voucherNo || '-'
-                : payload.docNumber || '-',
-            bookDate:
-              payload.type === 'vouchers'
-                ? payload.voucherDate || getTodayISO()
-                : payload.docDate || getTodayISO(),
-            subject:
-              payload.type === 'vouchers'
-                ? payload.voucherProject || '-'
-                : payload.subject || '-',
-            attachment: attachmentMeta,
-          });
-        } catch (syncErr) {
-          pushToast(
-            'error',
-            'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
-            syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
-          );
+        if (payload.projectSync?.enabled && payload.projectSync.project) {
+          try {
+            await syncSarabanDocToProject({
+              docId: payload.editId,
+              selection: payload.projectSync,
+              bookNo: resolvedBookNo,
+              bookDate: resolvedBookDate,
+              subject: resolvedSubject,
+              attachment: attachmentMeta,
+            });
+          } catch (syncErr) {
+            pushToast(
+              'error',
+              'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
+              syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+            );
+          }
+        }
+
+        if (payload.procurementSync?.enabled && payload.procurementSync.procurement) {
+          try {
+            await syncSarabanDocToProcurement({
+              docId: payload.editId,
+              selection: payload.procurementSync,
+              bookNo: resolvedBookNo,
+              bookDate: resolvedBookDate,
+              subject: resolvedSubject,
+              attachment: attachmentMeta,
+            });
+          } catch (syncErr) {
+            pushToast(
+              'error',
+              'ส่งข้อมูลเข้าระบบงานจัดซื้อจัดจ้างไม่สำเร็จ',
+              syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+            );
+          }
         }
       }
     } else {
@@ -833,7 +1074,10 @@ export default function App() {
         'บันทึกข้อมูลลง Google Drive ไม่สำเร็จ'
       );
 
-      if (payload.projectSync?.enabled && payload.projectSync.project) {
+      if (
+        (payload.projectSync?.enabled && payload.projectSync.project) ||
+        (payload.procurementSync?.enabled && payload.procurementSync.procurement)
+      ) {
         const attachmentMeta: SarabanAttachmentMeta | null = uploadedFileUrl
           ? {
               fileName: uploadedFileName || 'เอกสารแนบ',
@@ -842,31 +1086,51 @@ export default function App() {
               mimeType: uploadedMimeType || inferMimeTypeFromFileName(uploadedFileName),
             }
           : null;
+        const resolvedBookNo =
+          payload.type === 'vouchers' ? payload.voucherNo || '-' : enforcedDocNumber || '-';
+        const resolvedBookDate =
+          payload.type === 'vouchers'
+            ? payload.voucherDate || getTodayISO()
+            : payload.docDate || getTodayISO();
+        const resolvedSubject =
+          payload.type === 'vouchers' ? payload.voucherProject || '-' : payload.subject || '-';
 
-        try {
-          await syncSarabanDocToProject({
-            docId: newId,
-            selection: payload.projectSync,
-            bookNo:
-              payload.type === 'vouchers'
-                ? payload.voucherNo || '-'
-                : enforcedDocNumber || '-',
-            bookDate:
-              payload.type === 'vouchers'
-                ? payload.voucherDate || getTodayISO()
-                : payload.docDate || getTodayISO(),
-            subject:
-              payload.type === 'vouchers'
-                ? payload.voucherProject || '-'
-                : payload.subject || '-',
-            attachment: attachmentMeta,
-          });
-        } catch (syncErr) {
-          pushToast(
-            'error',
-            'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
-            syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
-          );
+        if (payload.projectSync?.enabled && payload.projectSync.project) {
+          try {
+            await syncSarabanDocToProject({
+              docId: newId,
+              selection: payload.projectSync,
+              bookNo: resolvedBookNo,
+              bookDate: resolvedBookDate,
+              subject: resolvedSubject,
+              attachment: attachmentMeta,
+            });
+          } catch (syncErr) {
+            pushToast(
+              'error',
+              'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
+              syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+            );
+          }
+        }
+
+        if (payload.procurementSync?.enabled && payload.procurementSync.procurement) {
+          try {
+            await syncSarabanDocToProcurement({
+              docId: newId,
+              selection: payload.procurementSync,
+              bookNo: resolvedBookNo,
+              bookDate: resolvedBookDate,
+              subject: resolvedSubject,
+              attachment: attachmentMeta,
+            });
+          } catch (syncErr) {
+            pushToast(
+              'error',
+              'ส่งข้อมูลเข้าระบบงานจัดซื้อจัดจ้างไม่สำเร็จ',
+              syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+            );
+          }
         }
       }
     }
@@ -1253,6 +1517,141 @@ export default function App() {
     }
   };
 
+  const handleSyncDocToProcurementFromDetail = async (
+    doc: SarabanDoc,
+    selection: ProcurementSyncSelection,
+    quickFilePayload: QuickDetailSavePayload
+  ) => {
+    if (!isAdmin) return;
+    setIsSyncingToProcurement(true);
+    try {
+      let attachmentMeta: SarabanAttachmentMeta | null = null;
+
+      if (quickFilePayload.selectedFile) {
+        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive ก่อนส่งเข้าจัดซื้อจัดจ้าง...');
+        const base64Data = await fileToBase64Data(quickFilePayload.selectedFile);
+        const mimeType = quickFilePayload.selectedFile.type || 'application/octet-stream';
+        const uploadRes = await callDriveApi({
+          action: 'uploadFile',
+          fileData: base64Data,
+          mimeType,
+          fileName: quickFilePayload.selectedFile.name,
+        });
+        if (!uploadRes.fileUrl) {
+          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
+        }
+        const uploadedUrl = uploadRes.fileUrl;
+        const uploadedName = quickFilePayload.selectedFile.name;
+
+        const nextDocs = documents.map((d) =>
+          String(d.id) === String(doc.id)
+            ? {
+                ...d,
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                dueDate: quickFilePayload.dueDate,
+                fileName: uploadedName,
+                fileData: uploadedUrl,
+              }
+            : d
+        );
+        setDocuments(nextDocs);
+        saveDocsCache(nextDocs);
+        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
+        setDetailDoc(updatedDetail);
+
+        enqueueBackgroundWrite(
+          async () => {
+            await callDriveApi({
+              action: 'update',
+              id: doc.id,
+              type: doc.type,
+              updates: {
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                due_date: quickFilePayload.dueDate,
+                file_name: uploadedName,
+                file_url: uploadedUrl,
+              },
+            });
+          },
+          () => {},
+          'อัปเดตไฟล์แนบลง Google Drive ไม่สำเร็จ'
+        );
+
+        attachmentMeta = {
+          fileName: uploadedName,
+          fileUrl: uploadedUrl,
+          fileSize: quickFilePayload.selectedFile.size,
+          mimeType,
+        };
+      } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
+        attachmentMeta = {
+          fileName: doc.fileName || 'เอกสารแนบ',
+          fileUrl: doc.fileData.trim(),
+          mimeType: inferMimeTypeFromFileName(doc.fileName),
+        };
+      }
+
+      setUploadPhaseLabel('กำลังส่งข้อมูลเข้าระบบงานจัดซื้อจัดจ้าง...');
+      await syncSarabanDocToProcurement({
+        docId: doc.id,
+        selection,
+        bookNo: doc.type === 'vouchers' ? doc.voucherNo || '-' : doc.docNumber || '-',
+        bookDate:
+          doc.type === 'vouchers'
+            ? doc.voucherDate || getTodayISO()
+            : doc.docDate || getTodayISO(),
+        subject: doc.type === 'vouchers' ? doc.voucherProject || '-' : doc.subject || '-',
+        attachment: attachmentMeta,
+      });
+    } finally {
+      setIsSyncingToProcurement(false);
+      setUploadPhaseLabel('');
+    }
+  };
+
+  const handleDeleteProcurementQueue = async (record: SarabanProcurementSyncRecord) => {
+    if (!isAdmin) return;
+    setIsDeletingProcurementQueue(true);
+    markProcurementQueueAsDeleted(record);
+    try {
+      const result = await deleteProcurementQueue(record);
+      const nextMap = removeProcurementSyncRecord(record.docId);
+      procurementSyncMapRef.current = nextMap;
+      setProcurementSyncMap(nextMap);
+      incrementProcurementSyncRevision(record.docId);
+
+      if (result.remoteDeleted) {
+        pushToast(
+          'success',
+          'ลบคิวจัดซื้อจัดจ้างแล้ว',
+          `ลบ ${record.queueId} ออกจากทั้งสารบรรณและระบบงานจัดซื้อจัดจ้างเรียบร้อย`
+        );
+      } else {
+        pushToast(
+          'info',
+          'ลบคิวออกจากหน้าสารบรรณแล้ว',
+          `ซ่อนคิว ${record.queueId} และปลดล็อกให้ส่งใหม่ได้แล้ว`
+        );
+      }
+    } catch (err) {
+      const nextMap = removeProcurementSyncRecord(record.docId);
+      procurementSyncMapRef.current = nextMap;
+      setProcurementSyncMap(nextMap);
+      incrementProcurementSyncRevision(record.docId);
+      pushToast(
+        'warning',
+        'ลบคิวออกจากหน้าสารบรรณแล้ว',
+        err instanceof Error
+          ? `ฝั่งจัดซื้อฯ ตอบกลับ: ${err.message} (ระบบสารบรรณซ่อนคิวที่ผิดให้แล้ว และสามารถส่งใหม่ได้)`
+          : 'ลบคิวที่แสดงในหน้าสารบรรณแล้ว และปลดล็อกให้ส่งใหม่ได้'
+      );
+    } finally {
+      setIsDeletingProcurementQueue(false);
+    }
+  };
+
   const handleImportExcel = async (type: DocType, yearStr: string, file: File) => {
     if (!isAdmin) return;
     pushToast('info', 'กำลังอ่านไฟล์ Excel...', file.name);
@@ -1324,6 +1723,7 @@ export default function App() {
               onSync={() => {
                 syncFromDrive({ force: true });
                 syncProjectQueueStatuses({ silent: true });
+                syncProcurementQueueStatuses({ silent: true });
               }}
               onOpenNewDoc={handleOpenNewDoc}
               onOpenMobileMenu={() => setMobileMenuOpen(true)}
@@ -1363,6 +1763,7 @@ export default function App() {
                   tabId={activeTab as RegisterTabId}
                   documents={documents}
                   projectSyncMap={projectSyncMap}
+                  procurementSyncMap={procurementSyncMap}
                   currentUser={currentUser}
                   isLoading={isLoadingDocs}
                   loadError={syncError}
@@ -1382,9 +1783,16 @@ export default function App() {
                     setRegisterReport({ title, rows, filterLabel })
                   }
                   onRetrySync={() => syncFromDrive({ force: true })}
-                  onRefreshProjectQueues={() => syncProjectQueueStatuses({ silent: false })}
-                  isRefreshingProjectQueues={isRefreshingQueueStatuses}
-                  pendingProjectQueueCount={pendingProjectQueueCount}
+                  onRefreshProjectQueues={() => {
+                    syncProjectQueueStatuses({ silent: false });
+                    syncProcurementQueueStatuses({ silent: false });
+                  }}
+                  isRefreshingProjectQueues={
+                    isRefreshingQueueStatuses || isRefreshingProcurementStatuses
+                  }
+                  pendingProjectQueueCount={
+                    pendingProjectQueueCount + pendingProcurementQueueCount
+                  }
                 />
               )}
             </main>
@@ -1398,10 +1806,13 @@ export default function App() {
         editingDoc={editingDoc}
         documents={documents}
         projectSyncMap={projectSyncMap}
+        procurementSyncMap={procurementSyncMap}
         isSubmitting={isSubmittingDoc}
         uploadPhaseLabel={uploadPhaseLabel}
         isDeletingProjectQueue={isDeletingProjectQueue}
         isRefreshingQueueStatus={isRefreshingQueueStatuses}
+        isDeletingProcurementQueue={isDeletingProcurementQueue}
+        isRefreshingProcurementQueueStatus={isRefreshingProcurementStatuses}
         onClose={() => {
           setWizardOpen(false);
           setEditingDoc(null);
@@ -1409,6 +1820,8 @@ export default function App() {
         onSubmit={handleSaveDocument}
         onDeleteProjectQueue={handleDeleteProjectQueue}
         onRefreshQueueStatus={syncProjectQueueStatuses}
+        onDeleteProcurementQueue={handleDeleteProcurementQueue}
+        onRefreshProcurementQueueStatus={syncProcurementQueueStatuses}
       />
 
       <DocumentDetailModal
@@ -1421,6 +1834,12 @@ export default function App() {
         isSyncingToProject={isSyncingToProject}
         isDeletingProjectQueue={isDeletingProjectQueue}
         isRefreshingQueueStatus={isRefreshingQueueStatuses}
+        existingProcurementSync={
+          detailDoc ? procurementSyncMap[String(detailDoc.id)] || null : null
+        }
+        isSyncingToProcurement={isSyncingToProcurement}
+        isDeletingProcurementQueue={isDeletingProcurementQueue}
+        isRefreshingProcurementQueueStatus={isRefreshingProcurementStatuses}
         onClose={() => setDetailDoc(null)}
         onEdit={handleEditDoc}
         onPrintCoverSheet={(doc) => {
@@ -1431,6 +1850,9 @@ export default function App() {
         onSyncToProject={handleSyncDocFromDetail}
         onDeleteProjectQueue={handleDeleteProjectQueue}
         onRefreshQueueStatus={syncProjectQueueStatuses}
+        onSyncToProcurement={handleSyncDocToProcurementFromDetail}
+        onDeleteProcurementQueue={handleDeleteProcurementQueue}
+        onRefreshProcurementQueueStatus={syncProcurementQueueStatuses}
       />
 
       <DeleteDocModal

@@ -1,0 +1,873 @@
+import { getTodayISO, normalizeDateToISO } from '../utils/sarabanUtils';
+import type { QueueStatusChangeEvent, SarabanAttachmentMeta, SarabanQueueStatus } from './projectSyncApi';
+import { getQueueStatusMeta, inferMimeTypeFromFileName } from './projectSyncApi';
+
+export const PROCUREMENT_SYNC_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbxSQAaWvVcrjEEnYUFnX3A8t4DBKS1m5fdfFZ8y7qJK1b75urBE7Dlcxi_OZEuYzT3m/exec';
+
+const PROCUREMENT_SYNC_HISTORY_KEY = 'esaraban_procurement_sync_history_v1';
+const PROCUREMENT_SYNC_REVISION_KEY = 'esaraban_procurement_sync_revisions_v1';
+const DELETED_PROCUREMENT_QUEUES_KEY = 'esaraban_deleted_procurement_queues_v1';
+
+export type ProcurementDocCategory =
+  | 'tor_order'
+  | 'tor_approval'
+  | 'ref_price'
+  | 'disbursement';
+
+export interface ProcurementCategoryMeta {
+  value: ProcurementDocCategory;
+  label: string;
+  hint: string;
+}
+
+export const PROCUREMENT_DOC_CATEGORIES: ProcurementCategoryMeta[] = [
+  {
+    value: 'tor_order',
+    label: 'คำสั่งแต่งตั้ง กก. TOR / ราคากลาง',
+    hint: 'ระบุผู้รับผิดชอบหลักหรือหมายเหตุเพิ่มเติม (ไม่บังคับ)',
+  },
+  {
+    value: 'tor_approval',
+    label: 'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง',
+    hint: 'ระบุผู้จัดทำ TOR และ/หรือ วงเงินราคากลาง (บาท) ในกระบวนการเดียวกัน',
+  },
+  {
+    value: 'disbursement',
+    label: 'ฎีกาเบิกจ่ายเงิน',
+    hint: 'ระบุงวดงาน จำนวนเงิน และสถานะการเบิกจ่าย',
+  },
+];
+
+export function getProcurementCategoryLabel(category?: string): string {
+  if (category === 'ref_price') {
+    return 'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง';
+  }
+  return (
+    PROCUREMENT_DOC_CATEGORIES.find((c) => c.value === category)?.label ||
+    category ||
+    'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง'
+  );
+}
+
+export interface ProcurementOption {
+  id: string;
+  projectCode: string;
+  fiscalYear: number;
+  name: string;
+  status: string;
+  statusLabel: string;
+  method: string;
+  budget: number;
+}
+
+export interface ProcurementSyncCategoryFields {
+  assigneeName?: string;
+  notes?: string;
+  torAuthor?: string;
+  details?: string;
+  refPrice?: string;
+  installment?: string;
+  amount?: string;
+  status?: 'pending' | 'paid';
+  voucherNo?: string;
+}
+
+export interface ProcurementSyncSelection {
+  enabled: boolean;
+  fiscalYearFilter: string;
+  procurement: ProcurementOption | null;
+  docCategory: ProcurementDocCategory;
+  fields: ProcurementSyncCategoryFields;
+}
+
+export interface ProcurementQueuePushInput {
+  docId: string | number;
+  procurement: ProcurementOption;
+  docCategory: ProcurementDocCategory;
+  fields: ProcurementSyncCategoryFields;
+  bookNo: string;
+  bookDate: string;
+  subject: string;
+  attachment: SarabanAttachmentMeta | null;
+  submittedBy: string;
+  idempotencyRevision?: number;
+}
+
+export interface ProcurementQueuePushResponse {
+  status: 'success' | 'error';
+  queueId?: string;
+  queueStatus?: string;
+  duplicated?: boolean;
+  message?: string;
+  idempotencyKey?: string;
+}
+
+export interface ProcurementRemoteQueueItem {
+  queueId: string;
+  idempotencyKey: string;
+  procurementId: string;
+  projectCode: string;
+  fiscalYear?: number;
+  docCategory: ProcurementDocCategory | string;
+  bookNo?: string;
+  bookDate?: string;
+  subject?: string;
+  queueStatus: SarabanQueueStatus;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectReason?: string;
+  createdAt?: string;
+  submittedBy?: string;
+}
+
+export interface ProcurementQueueFetchResult {
+  pendingCount: number;
+  items: ProcurementRemoteQueueItem[];
+}
+
+export interface SarabanProcurementSyncRecord {
+  docId: string;
+  queueId: string;
+  idempotencyKey?: string;
+  queueStatus: SarabanQueueStatus;
+  procurementId: string;
+  projectCode: string;
+  procurementName: string;
+  fiscalYear: number;
+  docCategory: ProcurementDocCategory;
+  bookNo: string;
+  syncedAt: string;
+  duplicated?: boolean;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectReason?: string;
+  lastCheckedAt?: string;
+}
+
+const UUID_LIKE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function getProcurementDisplayCode(projectCode?: string, procurementId?: string): string {
+  const code = String(projectCode || '').trim();
+  if (code && code !== '-') return code;
+  const id = String(procurementId || '').trim();
+  if (id && !UUID_LIKE_RE.test(id) && id.length <= 20) return id;
+  return '';
+}
+
+export function formatProcurementDisplayTitle(params: {
+  name: string;
+  projectCode?: string;
+  procurementId?: string;
+  fiscalYear?: number;
+}): string {
+  const code = getProcurementDisplayCode(params.projectCode, params.procurementId);
+  const yearPart = params.fiscalYear && params.fiscalYear > 0 ? ` · ปี ${params.fiscalYear}` : '';
+  return code ? `[${code}] ${params.name}${yearPart}` : `${params.name}${yearPart}`;
+}
+
+function isPreviewHost(): boolean {
+  const host = String(window.location.hostname || '').toLowerCase();
+  return host.endsWith('.run.app') || host === 'localhost' || host === '127.0.0.1';
+}
+
+function getEndpoints(queryString = ''): { url: string; useProxyHeader: boolean }[] {
+  const scriptUrl = PROCUREMENT_SYNC_SCRIPT_URL;
+  const sep = scriptUrl.includes('?') ? '&' : '?';
+  const directUrl = queryString ? `${scriptUrl}${sep}${queryString}` : scriptUrl;
+  const proxyParams = new URLSearchParams(queryString);
+  proxyParams.set('_scriptUrl', scriptUrl);
+  const proxyUrl = `/api/drive-proxy?${proxyParams.toString()}`;
+
+  if (isPreviewHost()) {
+    return [
+      { url: proxyUrl, useProxyHeader: true },
+      { url: directUrl, useProxyHeader: false },
+    ];
+  }
+  return [{ url: directUrl, useProxyHeader: false }];
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 15000
+): Promise<Response> {
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), {
+        once: true,
+      });
+    }
+  }
+
+  const timer = setTimeout(
+    () => controller.abort(new Error('การเชื่อมต่อระบบงานจัดซื้อจัดจ้างใช้เวลานานเกินกำหนด')),
+    timeoutMs
+  );
+
+  try {
+    const isRelative = url.startsWith('/');
+    return await fetch(url, {
+      ...options,
+      credentials: isRelative ? 'same-origin' : 'omit',
+      mode: isRelative ? 'same-origin' : 'cors',
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeProcurementOption(raw: Record<string, unknown>): ProcurementOption | null {
+  const id = String(raw.id || '').trim();
+  const name = String(raw.name || '').trim();
+  if (!id || !name) return null;
+
+  const projectCode = String(raw.projectCode || raw.code || '-').trim();
+  const rawFiscal = Number(raw.fiscalYear);
+  const inferredYear =
+    Number.isFinite(rawFiscal) && rawFiscal > 2500
+      ? rawFiscal
+      : /^25\d{2}$/.test(projectCode)
+      ? Number(projectCode)
+      : Number(rawFiscal) || 0;
+
+  return {
+    id,
+    projectCode,
+    fiscalYear: inferredYear,
+    name,
+    status: String(raw.status || '').trim(),
+    statusLabel: String(raw.statusLabel || raw.status || '').trim(),
+    method: String(raw.method || '').trim(),
+    budget: Number(raw.budget || 0) || 0,
+  };
+}
+
+export async function fetchProcurementOptions(
+  fiscalYear = 'all',
+  signal?: AbortSignal
+): Promise<ProcurementOption[]> {
+  const cleanFiscal = fiscalYear && fiscalYear.trim() ? fiscalYear.trim() : 'all';
+  const query = `action=getProcurementOptions&fiscalYear=${encodeURIComponent(cleanFiscal)}&t=${Date.now()}`;
+  const endpoints = getEndpoints(query);
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    try {
+      const headers: Record<string, string> = {};
+      if (endpoint.useProxyHeader) {
+        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
+      }
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        { method: 'GET', headers, redirect: 'follow', signal },
+        15000
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const text = await response.text();
+      const parsed = JSON.parse(text) as {
+        status?: string;
+        message?: string;
+        data?: Record<string, unknown>[];
+      };
+      if (!parsed || parsed.status !== 'success' || !Array.isArray(parsed.data)) {
+        throw new Error(parsed?.message || 'ไม่สามารถโหลดรายชื่อรายการจัดซื้อจัดจ้างได้');
+      }
+      return parsed.data
+        .map(normalizeProcurementOption)
+        .filter((item): item is ProcurementOption => item !== null);
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('ไม่สามารถโหลดรายชื่อรายการจากระบบงานจัดซื้อจัดจ้างได้');
+}
+
+function toISOCEDate(value?: string): string {
+  if (!value || !String(value).trim()) return '';
+  return normalizeDateToISO(value);
+}
+
+function toPositiveNumber(value?: string, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+export function buildProcurementCategoryPayload(
+  docCategory: ProcurementDocCategory,
+  fields: ProcurementSyncCategoryFields
+): Record<string, unknown> {
+  switch (docCategory) {
+    case 'tor_order':
+      return {
+        ...(fields.assigneeName?.trim() ? { assigneeName: fields.assigneeName.trim() } : {}),
+        ...(fields.notes?.trim() ? { notes: fields.notes.trim() } : {}),
+      };
+    case 'tor_approval': {
+      const refPriceNum = toPositiveNumber(fields.refPrice, 0);
+      return {
+        torAuthor: (fields.torAuthor || '').trim(),
+        ...(refPriceNum > 0 ? { refPrice: refPriceNum } : {}),
+        ...(fields.details?.trim() ? { details: fields.details.trim() } : {}),
+      };
+    }
+    case 'ref_price':
+      return {
+        refPrice: toPositiveNumber(fields.refPrice, 0),
+        ...(fields.details?.trim() ? { details: fields.details.trim() } : {}),
+      };
+    case 'disbursement':
+      return {
+        installment: Math.max(1, Math.round(toPositiveNumber(fields.installment, 1)) || 1),
+        amount: toPositiveNumber(fields.amount, 0),
+        status: fields.status || 'pending',
+        ...(fields.voucherNo?.trim() ? { voucherNo: fields.voucherNo.trim() } : {}),
+      };
+  }
+}
+
+export function validateProcurementSyncSelection(
+  selection: ProcurementSyncSelection
+): string | null {
+  if (!selection.enabled) return null;
+  if (!selection.procurement) {
+    return 'กรุณาเลือกรายการจัดซื้อจัดจ้างที่ต้องการเชื่อมโยง';
+  }
+  const f = selection.fields;
+  switch (selection.docCategory) {
+    case 'tor_approval':
+      if (!f.torAuthor?.trim() && (!f.refPrice || Number(f.refPrice) <= 0)) {
+        return 'กรุณาระบุชื่อผู้จัดทำ TOR หรือวงเงินราคากลางอย่างน้อย 1 รายการ';
+      }
+      break;
+    case 'ref_price':
+      if (!f.refPrice || Number(f.refPrice) <= 0) return 'กรุณาระบุวงเงินราคากลาง';
+      break;
+    case 'disbursement':
+      if (!f.amount || Number(f.amount) <= 0) return 'กรุณาระบุจำนวนเงินเบิกจ่ายตามฎีกา';
+      break;
+    case 'tor_order':
+    default:
+      break;
+  }
+  return null;
+}
+
+export function buildProcurementIdempotencyKey(
+  docId: string | number,
+  docCategory: ProcurementDocCategory | string,
+  revision?: number
+): string {
+  const rev = revision && revision > 0 ? revision : 0;
+  return rev > 0
+    ? `${String(docId)}:${docCategory}:r${rev}`
+    : `${String(docId)}:${docCategory}`;
+}
+
+export async function pushProcurementQueue(
+  input: ProcurementQueuePushInput
+): Promise<ProcurementQueuePushResponse> {
+  const isoBookDate = toISOCEDate(input.bookDate) || getTodayISO();
+  const fiscalYearNum = Number(input.procurement.fiscalYear) || 2569;
+  const idempotencyKey = buildProcurementIdempotencyKey(
+    input.docId,
+    input.docCategory,
+    input.idempotencyRevision
+  );
+
+  const requestBody = {
+    action: 'pushProcurementQueue',
+    idempotencyKey,
+    procurementId: input.procurement.id,
+    projectCode: input.procurement.projectCode,
+    fiscalYear: fiscalYearNum,
+    docCategory: input.docCategory,
+    bookNo: input.bookNo.trim() || '-',
+    bookDate: isoBookDate,
+    subject: input.subject.trim() || '-',
+    payload: buildProcurementCategoryPayload(input.docCategory, input.fields),
+    attachment: input.attachment
+      ? {
+          fileName: input.attachment.fileName,
+          fileUrl: input.attachment.fileUrl,
+          ...(typeof input.attachment.fileSize === 'number' && input.attachment.fileSize > 0
+            ? { fileSize: input.attachment.fileSize }
+            : {}),
+          mimeType:
+            input.attachment.mimeType || inferMimeTypeFromFileName(input.attachment.fileName),
+        }
+      : null,
+    submittedBy: input.submittedBy.trim() || 'เจ้าหน้าที่สารบรรณ',
+  };
+
+  const endpoints = getEndpoints('');
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/plain;charset=utf-8',
+      };
+      if (endpoint.useProxyHeader) {
+        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
+      }
+
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(requestBody),
+          redirect: 'follow',
+        },
+        30000
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const text = await response.text();
+      const parsed = JSON.parse(text) as ProcurementQueuePushResponse;
+      if (!parsed || parsed.status !== 'success') {
+        throw new Error(parsed?.message || 'ส่งข้อมูลเข้าคิวระบบจัดซื้อจัดจ้างไม่สำเร็จ');
+      }
+      return { ...parsed, idempotencyKey };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('ไม่สามารถส่งข้อมูลไปยังระบบงานจัดซื้อจัดจ้างได้');
+}
+
+export function loadProcurementSyncMap(): Record<string, SarabanProcurementSyncRecord> {
+  try {
+    const raw = localStorage.getItem(PROCUREMENT_SYNC_HISTORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, SarabanProcurementSyncRecord>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function persistProcurementSyncMap(
+  map: Record<string, SarabanProcurementSyncRecord>
+): void {
+  try {
+    localStorage.setItem(PROCUREMENT_SYNC_HISTORY_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+export function saveProcurementSyncRecord(
+  record: SarabanProcurementSyncRecord
+): Record<string, SarabanProcurementSyncRecord> {
+  const current = loadProcurementSyncMap();
+  const next = {
+    ...current,
+    [String(record.docId)]: record,
+  };
+  persistProcurementSyncMap(next);
+  return next;
+}
+
+export function removeProcurementSyncRecord(
+  docId: string | number
+): Record<string, SarabanProcurementSyncRecord> {
+  const current = loadProcurementSyncMap();
+  const key = String(docId);
+  if (!(key in current)) return current;
+  const next = { ...current };
+  delete next[key];
+  persistProcurementSyncMap(next);
+  return next;
+}
+
+export function getProcurementSyncRevision(docId: string | number): number {
+  try {
+    const raw = localStorage.getItem(PROCUREMENT_SYNC_REVISION_KEY);
+    if (!raw) return 0;
+    const map = JSON.parse(raw) as Record<string, number>;
+    const val = Number(map?.[String(docId)] || 0);
+    return Number.isFinite(val) && val > 0 ? val : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function incrementProcurementSyncRevision(docId: string | number): number {
+  const nextVal = getProcurementSyncRevision(docId) + 1;
+  try {
+    const raw = localStorage.getItem(PROCUREMENT_SYNC_REVISION_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    map[String(docId)] = nextVal;
+    localStorage.setItem(PROCUREMENT_SYNC_REVISION_KEY, JSON.stringify(map));
+  } catch {}
+  return nextVal;
+}
+
+function getDeletedProcurementQueueSet(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_PROCUREMENT_QUEUES_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown[];
+    return new Set(
+      Array.isArray(arr) ? arr.map((x) => String(x || '').trim()).filter(Boolean) : []
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function markProcurementQueueAsDeleted(record: SarabanProcurementSyncRecord): void {
+  try {
+    const set = getDeletedProcurementQueueSet();
+    if (record.queueId?.trim()) set.add(record.queueId.trim());
+    if (record.idempotencyKey?.trim()) set.add(record.idempotencyKey.trim());
+    localStorage.setItem(DELETED_PROCUREMENT_QUEUES_KEY, JSON.stringify([...set].slice(-200)));
+  } catch {}
+}
+
+export async function deleteProcurementQueue(record: SarabanProcurementSyncRecord): Promise<{
+  remoteDeleted: boolean;
+  remoteUnsupported: boolean;
+  message?: string;
+}> {
+  const rev = getProcurementSyncRevision(record.docId);
+  const idempotencyKey =
+    record.idempotencyKey ||
+    buildProcurementIdempotencyKey(record.docId, record.docCategory, rev);
+
+  const requestBody = {
+    action: 'deleteProcurementQueue',
+    queueId: record.queueId,
+    idempotencyKey,
+    docId: record.docId,
+    docCategory: record.docCategory,
+    procurementId: record.procurementId,
+  };
+
+  const endpoints = getEndpoints('');
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/plain;charset=utf-8',
+      };
+      if (endpoint.useProxyHeader) {
+        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
+      }
+
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(requestBody),
+          redirect: 'follow',
+        },
+        20000
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const text = await response.text();
+      const parsed = JSON.parse(text) as { status?: string; message?: string };
+      if (parsed?.status === 'success') {
+        return { remoteDeleted: true, remoteUnsupported: false, message: parsed.message };
+      }
+
+      const msg = String(parsed?.message || '');
+      if (msg.toLowerCase().includes('unknown') && msg.toLowerCase().includes('action')) {
+        return { remoteDeleted: false, remoteUnsupported: true, message: msg };
+      }
+
+      throw new Error(msg || 'ไม่สามารถลบคิวจากระบบงานจัดซื้อจัดจ้างได้');
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('ไม่สามารถเชื่อมต่อระบบงานจัดซื้อจัดจ้างเพื่อลบคิวได้');
+}
+
+export async function fetchProcurementQueueStatuses(
+  signal?: AbortSignal
+): Promise<ProcurementQueueFetchResult> {
+  const query = `action=getProcurementQueue&queueStatus=all&t=${Date.now()}`;
+  const endpoints = getEndpoints(query);
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    try {
+      const headers: Record<string, string> = {};
+      if (endpoint.useProxyHeader) {
+        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
+      }
+
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        { method: 'GET', headers, redirect: 'follow', signal },
+        20000
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const text = await response.text();
+      const parsed = JSON.parse(text) as {
+        status?: string;
+        message?: string;
+        pendingCount?: number;
+        data?: Record<string, unknown>[];
+      };
+
+      if (!parsed || parsed.status !== 'success' || !Array.isArray(parsed.data)) {
+        throw new Error(parsed?.message || 'ไม่สามารถดึงสถานะคิวจากระบบจัดซื้อจัดจ้างได้');
+      }
+
+      const items: ProcurementRemoteQueueItem[] = parsed.data
+        .map((raw): ProcurementRemoteQueueItem | null => {
+          const queueId = String(raw.queueId || '').trim();
+          const idempotencyKey = String(raw.idempotencyKey || '').trim();
+          if (!queueId && !idempotencyKey) return null;
+          return {
+            queueId,
+            idempotencyKey,
+            procurementId: String(raw.procurementId || raw.projectId || '').trim(),
+            projectCode: String(raw.projectCode || '').trim(),
+            fiscalYear: Number(raw.fiscalYear) || undefined,
+            docCategory: String(raw.docCategory || 'tor_approval').trim(),
+            bookNo: String(raw.bookNo || '').trim(),
+            bookDate: String(raw.bookDate || '').trim(),
+            subject: String(raw.subject || '').trim(),
+            queueStatus: String(raw.queueStatus || 'pending').trim().toLowerCase(),
+            reviewedBy: String(raw.reviewedBy || '').trim(),
+            reviewedAt: String(raw.reviewedAt || '').trim(),
+            rejectReason: String(raw.rejectReason || '').trim(),
+            createdAt: String(raw.createdAt || '').trim(),
+            submittedBy: String(raw.submittedBy || '').trim(),
+          };
+        })
+        .filter((x): x is ProcurementRemoteQueueItem => x !== null);
+
+      const pendingCount = Number.isFinite(Number(parsed.pendingCount))
+        ? Number(parsed.pendingCount)
+        : items.filter((item) => item.queueStatus === 'pending').length;
+
+      return { pendingCount, items };
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('ไม่สามารถตรวจสอบสถานะคิวจากระบบงานจัดซื้อจัดจ้างได้');
+}
+
+function parseIdempotencyKey(
+  key: string
+): { docId: string; docCategory: string; revision: number } | null {
+  const trimmed = String(key || '').trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(':');
+  if (parts.length < 2 || !parts[0]) return null;
+  let revision = 0;
+  if (parts[2]) {
+    const m = parts[2].match(/^r(\d+)$/i);
+    if (m) revision = Number(m[1]) || 0;
+  }
+  return {
+    docId: parts[0],
+    docCategory: parts[1],
+    revision,
+  };
+}
+
+export function reconcileProcurementSyncMap(
+  currentMap: Record<string, SarabanProcurementSyncRecord>,
+  remote: ProcurementQueueFetchResult,
+  options: {
+    existingDocIds?: Set<string>;
+    procurementNameById?: Map<string, string>;
+    fetchStartedAt?: number;
+  } = {}
+): {
+  nextMap: Record<string, SarabanProcurementSyncRecord>;
+  updatedCount: number;
+  hydratedCount: number;
+  removedCount: number;
+  statusChanges: QueueStatusChangeEvent[];
+} {
+  const deletedSet = getDeletedProcurementQueueSet();
+  const nextMap: Record<string, SarabanProcurementSyncRecord> = { ...currentMap };
+  const nowIso = new Date().toISOString();
+  const matchedOrHydratedDocIds = new Set<string>();
+
+  let updatedCount = 0;
+  let hydratedCount = 0;
+  let removedCount = 0;
+  const statusChanges: QueueStatusChangeEvent[] = [];
+
+  for (const item of remote.items) {
+    if (
+      (item.queueId && deletedSet.has(item.queueId)) ||
+      (item.idempotencyKey && deletedSet.has(item.idempotencyKey))
+    ) {
+      continue;
+    }
+
+    const parsedKey = parseIdempotencyKey(item.idempotencyKey);
+
+    let matchedDocId = Object.keys(nextMap).find((docId) => {
+      const rec = nextMap[docId];
+      if (!rec) return false;
+      if (item.queueId && rec.queueId === item.queueId) return true;
+      if (item.idempotencyKey && rec.idempotencyKey && rec.idempotencyKey === item.idempotencyKey) {
+        return true;
+      }
+      return false;
+    });
+
+    if (!matchedDocId && parsedKey && nextMap[parsedKey.docId]) {
+      const rec = nextMap[parsedKey.docId];
+      const currentRev = getProcurementSyncRevision(parsedKey.docId);
+      if (!rec.queueId || parsedKey.revision >= currentRev) {
+        matchedDocId = parsedKey.docId;
+      }
+    }
+
+    if (matchedDocId) {
+      matchedOrHydratedDocIds.add(matchedDocId);
+      const prev = nextMap[matchedDocId];
+      const normalizedStatus = (item.queueStatus || prev.queueStatus || 'pending').toLowerCase();
+      const nextReviewedBy = item.reviewedBy || '';
+      const nextReviewedAt = item.reviewedAt || '';
+      const nextRejectReason = item.rejectReason || '';
+
+      const changed =
+        prev.queueStatus !== normalizedStatus ||
+        (prev.reviewedBy || '') !== nextReviewedBy ||
+        (prev.reviewedAt || '') !== nextReviewedAt ||
+        (prev.rejectReason || '') !== nextRejectReason ||
+        (!prev.idempotencyKey && Boolean(item.idempotencyKey));
+
+      if (prev.queueStatus !== normalizedStatus) {
+        statusChanges.push({
+          docId: matchedDocId,
+          queueId: item.queueId || prev.queueId,
+          fromStatus: prev.queueStatus,
+          toStatus: normalizedStatus,
+          projectCode: item.projectCode || prev.projectCode || item.procurementId,
+          rejectReason: nextRejectReason,
+        });
+      }
+
+      const resolvedName = options.procurementNameById?.get(item.procurementId);
+      const needsNameEnrich = Boolean(
+        resolvedName &&
+          (!prev.procurementName || prev.procurementName.startsWith('รายการจัดซื้อฯ ')) &&
+          prev.procurementName !== resolvedName
+      );
+
+      if (changed || needsNameEnrich || !prev.lastCheckedAt) {
+        nextMap[matchedDocId] = {
+          ...prev,
+          queueId: item.queueId || prev.queueId,
+          idempotencyKey: item.idempotencyKey || prev.idempotencyKey,
+          queueStatus: normalizedStatus,
+          projectCode: item.projectCode || prev.projectCode,
+          procurementName: resolvedName || prev.procurementName,
+          fiscalYear: item.fiscalYear ?? prev.fiscalYear,
+          reviewedBy: nextReviewedBy,
+          reviewedAt: nextReviewedAt,
+          rejectReason: nextRejectReason,
+          lastCheckedAt: nowIso,
+        };
+        if (changed || needsNameEnrich) updatedCount += 1;
+      }
+    } else if (
+      parsedKey &&
+      options.existingDocIds &&
+      options.existingDocIds.has(parsedKey.docId) &&
+      parsedKey.revision >= getProcurementSyncRevision(parsedKey.docId)
+    ) {
+      matchedOrHydratedDocIds.add(parsedKey.docId);
+      const shortCode = getProcurementDisplayCode(item.projectCode, item.procurementId);
+      const procurementName =
+        options.procurementNameById?.get(item.procurementId) ||
+        (shortCode ? `รายการจัดซื้อฯ ${shortCode}` : 'รายการจัดซื้อจัดจ้าง');
+
+      nextMap[parsedKey.docId] = {
+        docId: parsedKey.docId,
+        queueId: item.queueId,
+        idempotencyKey: item.idempotencyKey,
+        queueStatus: (item.queueStatus || 'pending').toLowerCase(),
+        procurementId: item.procurementId,
+        projectCode: item.projectCode || '-',
+        procurementName,
+        fiscalYear: item.fiscalYear || 0,
+        docCategory: (item.docCategory as ProcurementDocCategory) || 'tor_approval',
+        bookNo: item.bookNo || '-',
+        syncedAt: item.createdAt || nowIso,
+        reviewedBy: item.reviewedBy || '',
+        reviewedAt: item.reviewedAt || '',
+        rejectReason: item.rejectReason || '',
+        lastCheckedAt: nowIso,
+      };
+      hydratedCount += 1;
+    }
+  }
+
+  for (const docId of Object.keys(nextMap)) {
+    if (matchedOrHydratedDocIds.has(docId)) continue;
+    const rec = nextMap[docId];
+    if (rec && options.fetchStartedAt) {
+      const syncedMs = Date.parse(rec.syncedAt || '');
+      if (Number.isFinite(syncedMs) && syncedMs > options.fetchStartedAt - 2000) {
+        continue;
+      }
+    }
+    delete nextMap[docId];
+    removedCount += 1;
+  }
+
+  persistProcurementSyncMap(nextMap);
+
+  return {
+    nextMap,
+    updatedCount,
+    hydratedCount,
+    removedCount,
+    statusChanges,
+  };
+}
+
+export { getQueueStatusMeta };

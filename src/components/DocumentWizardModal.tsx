@@ -28,11 +28,18 @@ import {
   normalizeWhitespace,
 } from '../utils/sarabanUtils';
 import type {
+  ProcurementDocCategory,
+  ProcurementSyncSelection,
+  SarabanProcurementSyncRecord,
+} from '../services/procurementSyncApi';
+import { validateProcurementSyncSelection } from '../services/procurementSyncApi';
+import type {
   ProjectDocCategory,
   ProjectSyncSelection,
   SarabanProjectSyncRecord,
 } from '../services/projectSyncApi';
 import { validateProjectSyncSelection } from '../services/projectSyncApi';
+import { ProcurementSyncPanel } from './ProcurementSyncPanel';
 import { ProjectSyncPanel } from './ProjectSyncPanel';
 import { SmartAutocompleteInput } from './SmartAutocompleteInput';
 
@@ -63,6 +70,7 @@ export interface DocumentFormPayload {
   selectedFile: File | null;
   removeExistingAttachment: boolean;
   projectSync?: ProjectSyncSelection | null;
+  procurementSync?: ProcurementSyncSelection | null;
 }
 
 interface DocumentWizardModalProps {
@@ -70,14 +78,19 @@ interface DocumentWizardModalProps {
   editingDoc: SarabanDoc | null;
   documents: SarabanDoc[];
   projectSyncMap?: Record<string, SarabanProjectSyncRecord>;
+  procurementSyncMap?: Record<string, SarabanProcurementSyncRecord>;
   isSubmitting: boolean;
   uploadPhaseLabel: string;
   isDeletingProjectQueue?: boolean;
   isRefreshingQueueStatus?: boolean;
+  isDeletingProcurementQueue?: boolean;
+  isRefreshingProcurementQueueStatus?: boolean;
   onClose: () => void;
   onSubmit: (payload: DocumentFormPayload) => Promise<void>;
   onDeleteProjectQueue?: (record: SarabanProjectSyncRecord) => Promise<void>;
   onRefreshQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
+  onDeleteProcurementQueue?: (record: SarabanProcurementSyncRecord) => Promise<void>;
+  onRefreshProcurementQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 const DOC_TYPES_ORDER: DocType[] = [
@@ -94,14 +107,19 @@ export function DocumentWizardModal({
   editingDoc,
   documents,
   projectSyncMap = {},
+  procurementSyncMap = {},
   isSubmitting,
   uploadPhaseLabel,
   isDeletingProjectQueue = false,
   isRefreshingQueueStatus = false,
+  isDeletingProcurementQueue = false,
+  isRefreshingProcurementQueueStatus = false,
   onClose,
   onSubmit,
   onDeleteProjectQueue,
   onRefreshQueueStatus,
+  onDeleteProcurementQueue,
+  onRefreshProcurementQueueStatus,
 }: DocumentWizardModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [stepError, setStepError] = useState('');
@@ -161,6 +179,35 @@ export function DocumentWizardModal({
     createDefaultProjectSync('incoming')
   );
 
+  const createDefaultProcurementSync = (
+    targetType: DocType,
+    voucherAmt = '',
+    voucherNoStr = ''
+  ): ProcurementSyncSelection => {
+    const defaultCategory: ProcurementDocCategory =
+      targetType === 'vouchers'
+        ? 'disbursement'
+        : targetType === 'orders'
+        ? 'tor_order'
+        : 'tor_approval';
+    return {
+      enabled: false,
+      fiscalYearFilter: 'all',
+      procurement: null,
+      docCategory: defaultCategory,
+      fields: {
+        installment: '1',
+        status: 'pending',
+        ...(voucherAmt ? { amount: voucherAmt } : {}),
+        ...(voucherNoStr ? { voucherNo: voucherNoStr } : {}),
+      },
+    };
+  };
+
+  const [procurementSync, setProcurementSync] = useState<ProcurementSyncSelection>(() =>
+    createDefaultProcurementSync('incoming')
+  );
+
   useEffect(() => {
     if (!isOpen) return;
     setStepError('');
@@ -210,6 +257,34 @@ export function DocumentWizardModal({
         };
       }
       setProjectSync(baseSync);
+
+      const existingProcRecord = procurementSyncMap[String(editingDoc.id)];
+      const baseProcSync = createDefaultProcurementSync(
+        t,
+        editingDoc.voucherAmount ? String(editingDoc.voucherAmount) : '',
+        editingDoc.voucherNo || ''
+      );
+      if (existingProcRecord) {
+        baseProcSync.docCategory =
+          existingProcRecord.docCategory === 'ref_price'
+            ? 'tor_approval'
+            : existingProcRecord.docCategory;
+        baseProcSync.fiscalYearFilter =
+          existingProcRecord.fiscalYear && existingProcRecord.fiscalYear > 0
+            ? String(existingProcRecord.fiscalYear)
+            : 'all';
+        baseProcSync.procurement = {
+          id: existingProcRecord.procurementId,
+          projectCode: existingProcRecord.projectCode,
+          fiscalYear: existingProcRecord.fiscalYear,
+          name: existingProcRecord.procurementName,
+          status: '',
+          statusLabel: '',
+          method: '',
+          budget: 0,
+        };
+      }
+      setProcurementSync(baseProcSync);
     } else {
       setStep(1);
       setDocType('incoming');
@@ -235,6 +310,7 @@ export function DocumentWizardModal({
       setVoucherAmount('');
       setVoucherProject('');
       setProjectSync(createDefaultProjectSync('incoming'));
+      setProcurementSync(createDefaultProcurementSync('incoming'));
     }
   }, [isOpen, editingDoc]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -415,6 +491,10 @@ export function DocumentWizardModal({
       ['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && projectSync.enabled
         ? projectSync
         : null,
+    procurementSync:
+      ['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && procurementSync.enabled
+        ? procurementSync
+        : null,
   });
 
   const handleSaveFromStep2 = async () => {
@@ -424,12 +504,22 @@ export function DocumentWizardModal({
       setStepError(err);
       return;
     }
-    if (['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && projectSync.enabled) {
-      const syncErr = validateProjectSyncSelection(projectSync);
-      if (syncErr) {
-        setStep(3);
-        setStepError(syncErr);
-        return;
+    if (['outgoing', 'memos', 'orders', 'vouchers'].includes(docType)) {
+      if (projectSync.enabled) {
+        const syncErr = validateProjectSyncSelection(projectSync);
+        if (syncErr) {
+          setStep(3);
+          setStepError(syncErr);
+          return;
+        }
+      }
+      if (procurementSync.enabled) {
+        const procErr = validateProcurementSyncSelection(procurementSync);
+        if (procErr) {
+          setStep(3);
+          setStepError(procErr);
+          return;
+        }
       }
     }
     await onSubmit(buildPayload());
@@ -451,6 +541,11 @@ export function DocumentWizardModal({
       const syncErr = validateProjectSyncSelection(projectSync);
       if (syncErr) {
         setStepError(syncErr);
+        return;
+      }
+      const procErr = validateProcurementSyncSelection(procurementSync);
+      if (procErr) {
+        setStepError(procErr);
         return;
       }
     }
@@ -1169,22 +1264,40 @@ export function DocumentWizardModal({
                   )}
                 </div>
 
-                {/* Project System Sync Queue Section */}
+                {/* Project & Procurement Sync Queue Sections */}
                 {['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && (
-                  <ProjectSyncPanel
-                    value={projectSync}
-                    onChange={setProjectSync}
-                    existingSync={editingDoc ? projectSyncMap[String(editingDoc.id)] || null : null}
-                    disabled={isSubmitting}
-                    onDeleteSyncedQueue={onDeleteProjectQueue}
-                    isDeletingQueue={isDeletingProjectQueue}
-                    onRefreshQueueStatus={
-                      onRefreshQueueStatus
-                        ? () => onRefreshQueueStatus({ silent: false })
-                        : undefined
-                    }
-                    isRefreshingQueueStatus={isRefreshingQueueStatus}
-                  />
+                  <div className="space-y-3">
+                    <ProjectSyncPanel
+                      value={projectSync}
+                      onChange={setProjectSync}
+                      existingSync={editingDoc ? projectSyncMap[String(editingDoc.id)] || null : null}
+                      disabled={isSubmitting}
+                      onDeleteSyncedQueue={onDeleteProjectQueue}
+                      isDeletingQueue={isDeletingProjectQueue}
+                      onRefreshQueueStatus={
+                        onRefreshQueueStatus
+                          ? () => onRefreshQueueStatus({ silent: false })
+                          : undefined
+                      }
+                      isRefreshingQueueStatus={isRefreshingQueueStatus}
+                    />
+                    <ProcurementSyncPanel
+                      value={procurementSync}
+                      onChange={setProcurementSync}
+                      existingSync={
+                        editingDoc ? procurementSyncMap[String(editingDoc.id)] || null : null
+                      }
+                      disabled={isSubmitting}
+                      onDeleteSyncedQueue={onDeleteProcurementQueue}
+                      isDeletingQueue={isDeletingProcurementQueue}
+                      onRefreshQueueStatus={
+                        onRefreshProcurementQueueStatus
+                          ? () => onRefreshProcurementQueueStatus({ silent: false })
+                          : undefined
+                      }
+                      isRefreshingQueueStatus={isRefreshingProcurementQueueStatus}
+                    />
+                  </div>
                 )}
               </div>
             )}

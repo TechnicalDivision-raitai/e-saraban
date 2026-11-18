@@ -15,6 +15,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type {
+  ProcurementDocCategory,
+  ProcurementSyncSelection,
+  SarabanProcurementSyncRecord,
+} from '../services/procurementSyncApi';
+import { validateProcurementSyncSelection } from '../services/procurementSyncApi';
+import type {
   ProjectDocCategory,
   ProjectSyncSelection,
   SarabanProjectSyncRecord,
@@ -23,6 +29,7 @@ import { getQueueStatusMeta, validateProjectSyncSelection } from '../services/pr
 import type { SarabanDoc } from '../types/saraban';
 import { WORKFLOW_STATUSES } from '../types/saraban';
 import { formatRegDisplay, formatThaiDate, normalizeWhitespace } from '../utils/sarabanUtils';
+import { ProcurementSyncPanel } from './ProcurementSyncPanel';
 import { ProjectSyncPanel } from './ProjectSyncPanel';
 import { SmartAutocompleteInput } from './SmartAutocompleteInput';
 import { DocTypeBadge, StatusHighlightBadge, UrgencyHighlightBadge } from './StatusBadges';
@@ -46,6 +53,10 @@ interface DocumentDetailModalProps {
   isSyncingToProject?: boolean;
   isDeletingProjectQueue?: boolean;
   isRefreshingQueueStatus?: boolean;
+  existingProcurementSync?: SarabanProcurementSyncRecord | null;
+  isSyncingToProcurement?: boolean;
+  isDeletingProcurementQueue?: boolean;
+  isRefreshingProcurementQueueStatus?: boolean;
   onClose: () => void;
   onEdit: (doc: SarabanDoc) => void;
   onPrintCoverSheet: (doc: SarabanDoc) => void;
@@ -57,6 +68,13 @@ interface DocumentDetailModalProps {
   ) => Promise<void>;
   onDeleteProjectQueue?: (record: SarabanProjectSyncRecord) => Promise<void>;
   onRefreshQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
+  onSyncToProcurement?: (
+    doc: SarabanDoc,
+    selection: ProcurementSyncSelection,
+    quickFilePayload: QuickDetailSavePayload
+  ) => Promise<void>;
+  onDeleteProcurementQueue?: (record: SarabanProcurementSyncRecord) => Promise<void>;
+  onRefreshProcurementQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 function buildInitialProjectSync(
@@ -95,6 +113,51 @@ function buildInitialProjectSync(
   };
 }
 
+function buildInitialProcurementSync(
+  doc: SarabanDoc | null,
+  existingSync?: SarabanProcurementSyncRecord | null
+): ProcurementSyncSelection {
+  const defaultCategory: ProcurementDocCategory =
+    doc?.type === 'vouchers'
+      ? 'disbursement'
+      : doc?.type === 'orders'
+      ? 'tor_order'
+      : 'tor_approval';
+  return {
+    enabled: false,
+    fiscalYearFilter:
+      existingSync?.fiscalYear && existingSync.fiscalYear > 0
+        ? String(existingSync.fiscalYear)
+        : 'all',
+    procurement: existingSync
+      ? {
+          id: existingSync.procurementId,
+          projectCode: existingSync.projectCode,
+          fiscalYear: existingSync.fiscalYear,
+          name: existingSync.procurementName,
+          status: '',
+          statusLabel: '',
+          method: '',
+          budget: 0,
+        }
+      : null,
+    docCategory:
+      existingSync?.docCategory === 'ref_price'
+        ? 'tor_approval'
+        : existingSync?.docCategory || defaultCategory,
+    fields: {
+      installment: '1',
+      status: 'pending',
+      ...(doc?.type === 'vouchers' && doc.voucherAmount
+        ? { amount: String(doc.voucherAmount) }
+        : {}),
+      ...(doc?.type === 'vouchers' && doc.voucherNo
+        ? { voucherNo: String(doc.voucherNo) }
+        : {}),
+    },
+  };
+}
+
 export function DocumentDetailModal({
   doc,
   isAdmin,
@@ -105,6 +168,10 @@ export function DocumentDetailModal({
   isSyncingToProject = false,
   isDeletingProjectQueue = false,
   isRefreshingQueueStatus = false,
+  existingProcurementSync = null,
+  isSyncingToProcurement = false,
+  isDeletingProcurementQueue = false,
+  isRefreshingProcurementQueueStatus = false,
   onClose,
   onEdit,
   onPrintCoverSheet,
@@ -112,6 +179,9 @@ export function DocumentDetailModal({
   onSyncToProject,
   onDeleteProjectQueue,
   onRefreshQueueStatus,
+  onSyncToProcurement,
+  onDeleteProcurementQueue,
+  onRefreshProcurementQueueStatus,
 }: DocumentDetailModalProps) {
   const [assignee, setAssignee] = useState('');
   const [status, setStatus] = useState('');
@@ -122,6 +192,10 @@ export function DocumentDetailModal({
     buildInitialProjectSync(doc, existingProjectSync)
   );
   const [projectPushError, setProjectPushError] = useState('');
+  const [procurementSync, setProcurementSync] = useState<ProcurementSyncSelection>(() =>
+    buildInitialProcurementSync(doc, existingProcurementSync)
+  );
+  const [procurementPushError, setProcurementPushError] = useState('');
 
   useEffect(() => {
     if (!doc) return;
@@ -132,8 +206,13 @@ export function DocumentDetailModal({
     setRemoveExistingAttachment(false);
     setProjectSync(buildInitialProjectSync(doc, existingProjectSync));
     setProjectPushError('');
+    setProcurementSync(buildInitialProcurementSync(doc, existingProcurementSync));
+    setProcurementPushError('');
     if (existingProjectSync && onRefreshQueueStatus) {
       onRefreshQueueStatus({ silent: true });
+    }
+    if (existingProcurementSync && onRefreshProcurementQueueStatus) {
+      onRefreshProcurementQueueStatus({ silent: true });
     }
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -143,6 +222,13 @@ export function DocumentDetailModal({
       setProjectSync(buildInitialProjectSync(doc, null));
     }
   }, [doc, existingProjectSync, projectSync.enabled]);
+
+  useEffect(() => {
+    if (!doc) return;
+    if (!existingProcurementSync && !procurementSync.enabled) {
+      setProcurementSync(buildInitialProcurementSync(doc, null));
+    }
+  }, [doc, existingProcurementSync, procurementSync.enabled]);
 
   if (!doc) return null;
 
@@ -187,6 +273,32 @@ export function DocumentDetailModal({
         pushErr instanceof Error
           ? pushErr.message
           : 'ไม่สามารถส่งข้อมูลเข้าระบบงานโครงการได้'
+      );
+    }
+  };
+
+  const handlePushProcurementSync = async () => {
+    if (!onSyncToProcurement) return;
+    setProcurementPushError('');
+    const err = validateProcurementSyncSelection({ ...procurementSync, enabled: true });
+    if (err) {
+      setProcurementPushError(err);
+      return;
+    }
+    try {
+      await onSyncToProcurement(doc, procurementSync, {
+        id: doc.id,
+        assignee: normalizeWhitespace(assignee) || 'นิศาชล คงดี',
+        status,
+        dueDate,
+        selectedFile,
+        removeExistingAttachment,
+      });
+    } catch (pushErr) {
+      setProcurementPushError(
+        pushErr instanceof Error
+          ? pushErr.message
+          : 'ไม่สามารถส่งข้อมูลเข้าระบบงานจัดซื้อจัดจ้างได้'
       );
     }
   };
@@ -249,7 +361,26 @@ export function DocumentDetailModal({
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                     )}
                     <span>
-                      {statusMeta.shortLabel}: {existingProjectSync.queueId}
+                      โครงการ · {statusMeta.shortLabel}: {existingProjectSync.queueId}
+                    </span>
+                  </span>
+                );
+              })()}
+              {existingProcurementSync && (() => {
+                const statusMeta = getQueueStatusMeta(existingProcurementSync.queueStatus);
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold tabular-nums whitespace-nowrap ${statusMeta.badgeClass}`}
+                  >
+                    {statusMeta.status === 'approved' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : statusMeta.status === 'rejected' ? (
+                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>
+                      จัดซื้อฯ · {statusMeta.shortLabel}: {existingProcurementSync.queueId}
                     </span>
                   </span>
                 );
@@ -561,6 +692,29 @@ export function DocumentDetailModal({
                 onRefreshQueueStatus ? () => onRefreshQueueStatus({ silent: false }) : undefined
               }
               isRefreshingQueueStatus={isRefreshingQueueStatus}
+            />
+          )}
+
+          {isAdmin && supportsProjectSync && onSyncToProcurement && (
+            <ProcurementSyncPanel
+              value={procurementSync}
+              onChange={(next) => {
+                setProcurementPushError('');
+                setProcurementSync(next);
+              }}
+              existingSync={existingProcurementSync}
+              disabled={isSavingQuickUpdate}
+              onPushNow={handlePushProcurementSync}
+              isPushingNow={isSyncingToProcurement}
+              pushError={procurementPushError}
+              onDeleteSyncedQueue={onDeleteProcurementQueue}
+              isDeletingQueue={isDeletingProcurementQueue}
+              onRefreshQueueStatus={
+                onRefreshProcurementQueueStatus
+                  ? () => onRefreshProcurementQueueStatus({ silent: false })
+                  : undefined
+              }
+              isRefreshingQueueStatus={isRefreshingProcurementQueueStatus}
             />
           )}
         </div>
