@@ -1,4 +1,6 @@
 import {
+  CheckCircle2,
+  Clock,
   ExternalLink,
   FileUp,
   Loader2,
@@ -9,11 +11,19 @@ import {
   Save,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import type {
+  ProjectDocCategory,
+  ProjectSyncSelection,
+  SarabanProjectSyncRecord,
+} from '../services/projectSyncApi';
+import { getQueueStatusMeta, validateProjectSyncSelection } from '../services/projectSyncApi';
 import type { SarabanDoc } from '../types/saraban';
 import { WORKFLOW_STATUSES } from '../types/saraban';
 import { formatRegDisplay, formatThaiDate, normalizeWhitespace } from '../utils/sarabanUtils';
+import { ProjectSyncPanel } from './ProjectSyncPanel';
 import { SmartAutocompleteInput } from './SmartAutocompleteInput';
 import { DocTypeBadge, StatusHighlightBadge, UrgencyHighlightBadge } from './StatusBadges';
 
@@ -32,10 +42,57 @@ interface DocumentDetailModalProps {
   assigneeSuggestions: string[];
   isSavingQuickUpdate: boolean;
   uploadPhaseLabel: string;
+  existingProjectSync?: SarabanProjectSyncRecord | null;
+  isSyncingToProject?: boolean;
+  isDeletingProjectQueue?: boolean;
+  isRefreshingQueueStatus?: boolean;
   onClose: () => void;
   onEdit: (doc: SarabanDoc) => void;
   onPrintCoverSheet: (doc: SarabanDoc) => void;
   onQuickSave: (payload: QuickDetailSavePayload) => Promise<void>;
+  onSyncToProject?: (
+    doc: SarabanDoc,
+    selection: ProjectSyncSelection,
+    quickFilePayload: QuickDetailSavePayload
+  ) => Promise<void>;
+  onDeleteProjectQueue?: (record: SarabanProjectSyncRecord) => Promise<void>;
+  onRefreshQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
+}
+
+function buildInitialProjectSync(
+  doc: SarabanDoc | null,
+  existingSync?: SarabanProjectSyncRecord | null
+): ProjectSyncSelection {
+  const defaultCategory: ProjectDocCategory =
+    doc?.type === 'vouchers'
+      ? 'disbursement'
+      : doc?.type === 'orders'
+      ? 'tor_order'
+      : 'other';
+  return {
+    enabled: false,
+    fiscalYearFilter: existingSync?.fiscalYear ? String(existingSync.fiscalYear) : 'all',
+    project: existingSync
+      ? {
+          id: existingSync.projectId,
+          projectCode: existingSync.projectCode,
+          fiscalYear: existingSync.fiscalYear,
+          name: existingSync.projectName,
+          status: '',
+          contractNo: '',
+        }
+      : null,
+    docCategory: existingSync?.docCategory || defaultCategory,
+    fields: {
+      installment: '1',
+      result: 'pass',
+      status: 'pending',
+      remunerationType: 'inspection',
+      ...(doc?.type === 'vouchers' && doc.voucherAmount
+        ? { amount: String(doc.voucherAmount) }
+        : {}),
+    },
+  };
 }
 
 export function DocumentDetailModal({
@@ -44,16 +101,27 @@ export function DocumentDetailModal({
   assigneeSuggestions,
   isSavingQuickUpdate,
   uploadPhaseLabel,
+  existingProjectSync = null,
+  isSyncingToProject = false,
+  isDeletingProjectQueue = false,
+  isRefreshingQueueStatus = false,
   onClose,
   onEdit,
   onPrintCoverSheet,
   onQuickSave,
+  onSyncToProject,
+  onDeleteProjectQueue,
+  onRefreshQueueStatus,
 }: DocumentDetailModalProps) {
   const [assignee, setAssignee] = useState('');
   const [status, setStatus] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false);
+  const [projectSync, setProjectSync] = useState<ProjectSyncSelection>(() =>
+    buildInitialProjectSync(doc, existingProjectSync)
+  );
+  const [projectPushError, setProjectPushError] = useState('');
 
   useEffect(() => {
     if (!doc) return;
@@ -62,7 +130,19 @@ export function DocumentDetailModal({
     setDueDate(doc.dueDate && doc.dueDate !== '-' ? doc.dueDate : '');
     setSelectedFile(null);
     setRemoveExistingAttachment(false);
-  }, [doc]);
+    setProjectSync(buildInitialProjectSync(doc, existingProjectSync));
+    setProjectPushError('');
+    if (existingProjectSync && onRefreshQueueStatus) {
+      onRefreshQueueStatus({ silent: true });
+    }
+  }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!doc) return;
+    if (!existingProjectSync && !projectSync.enabled) {
+      setProjectSync(buildInitialProjectSync(doc, null));
+    }
+  }, [doc, existingProjectSync, projectSync.enabled]);
 
   if (!doc) return null;
 
@@ -84,6 +164,34 @@ export function DocumentDetailModal({
       removeExistingAttachment,
     });
   };
+
+  const handlePushProjectSync = async () => {
+    if (!onSyncToProject) return;
+    setProjectPushError('');
+    const err = validateProjectSyncSelection({ ...projectSync, enabled: true });
+    if (err) {
+      setProjectPushError(err);
+      return;
+    }
+    try {
+      await onSyncToProject(doc, projectSync, {
+        id: doc.id,
+        assignee: normalizeWhitespace(assignee) || 'นิศาชล คงดี',
+        status,
+        dueDate,
+        selectedFile,
+        removeExistingAttachment,
+      });
+    } catch (pushErr) {
+      setProjectPushError(
+        pushErr instanceof Error
+          ? pushErr.message
+          : 'ไม่สามารถส่งข้อมูลเข้าระบบงานโครงการได้'
+      );
+    }
+  };
+
+  const supportsProjectSync = ['outgoing', 'memos', 'orders', 'vouchers'].includes(doc.type);
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -127,6 +235,25 @@ export function DocumentDetailModal({
             <div className="flex items-center gap-2 flex-wrap">
               {doc.type === 'incoming' && <UrgencyHighlightBadge urgency={doc.urgency} />}
               {doc.status && <StatusHighlightBadge status={doc.status} />}
+              {existingProjectSync && (() => {
+                const statusMeta = getQueueStatusMeta(existingProjectSync.queueStatus);
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold tabular-nums whitespace-nowrap ${statusMeta.badgeClass}`}
+                  >
+                    {statusMeta.status === 'approved' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : statusMeta.status === 'rejected' ? (
+                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>
+                      {statusMeta.shortLabel}: {existingProjectSync.queueId}
+                    </span>
+                  </span>
+                );
+              })()}
             </div>
           </div>
 
@@ -414,6 +541,27 @@ export function DocumentDetailModal({
                 </a>
               )}
             </div>
+          )}
+
+          {isAdmin && supportsProjectSync && onSyncToProject && (
+            <ProjectSyncPanel
+              value={projectSync}
+              onChange={(next) => {
+                setProjectPushError('');
+                setProjectSync(next);
+              }}
+              existingSync={existingProjectSync}
+              disabled={isSavingQuickUpdate}
+              onPushNow={handlePushProjectSync}
+              isPushingNow={isSyncingToProject}
+              pushError={projectPushError}
+              onDeleteSyncedQueue={onDeleteProjectQueue}
+              isDeletingQueue={isDeletingProjectQueue}
+              onRefreshQueueStatus={
+                onRefreshQueueStatus ? () => onRefreshQueueStatus({ silent: false }) : undefined
+              }
+              isRefreshingQueueStatus={isRefreshingQueueStatus}
+            />
           )}
         </div>
 

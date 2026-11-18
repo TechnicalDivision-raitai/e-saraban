@@ -27,6 +27,13 @@ import {
   normalizeDateToISO,
   normalizeWhitespace,
 } from '../utils/sarabanUtils';
+import type {
+  ProjectDocCategory,
+  ProjectSyncSelection,
+  SarabanProjectSyncRecord,
+} from '../services/projectSyncApi';
+import { validateProjectSyncSelection } from '../services/projectSyncApi';
+import { ProjectSyncPanel } from './ProjectSyncPanel';
 import { SmartAutocompleteInput } from './SmartAutocompleteInput';
 
 export interface DocumentFormPayload {
@@ -55,16 +62,22 @@ export interface DocumentFormPayload {
   voucherProject: string;
   selectedFile: File | null;
   removeExistingAttachment: boolean;
+  projectSync?: ProjectSyncSelection | null;
 }
 
 interface DocumentWizardModalProps {
   isOpen: boolean;
   editingDoc: SarabanDoc | null;
   documents: SarabanDoc[];
+  projectSyncMap?: Record<string, SarabanProjectSyncRecord>;
   isSubmitting: boolean;
   uploadPhaseLabel: string;
+  isDeletingProjectQueue?: boolean;
+  isRefreshingQueueStatus?: boolean;
   onClose: () => void;
   onSubmit: (payload: DocumentFormPayload) => Promise<void>;
+  onDeleteProjectQueue?: (record: SarabanProjectSyncRecord) => Promise<void>;
+  onRefreshQueueStatus?: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 const DOC_TYPES_ORDER: DocType[] = [
@@ -80,10 +93,15 @@ export function DocumentWizardModal({
   isOpen,
   editingDoc,
   documents,
+  projectSyncMap = {},
   isSubmitting,
   uploadPhaseLabel,
+  isDeletingProjectQueue = false,
+  isRefreshingQueueStatus = false,
   onClose,
   onSubmit,
+  onDeleteProjectQueue,
+  onRefreshQueueStatus,
 }: DocumentWizardModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [stepError, setStepError] = useState('');
@@ -113,6 +131,35 @@ export function DocumentWizardModal({
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false);
+
+  const createDefaultProjectSync = (
+    targetType: DocType,
+    voucherAmt = ''
+  ): ProjectSyncSelection => {
+    const defaultCategory: ProjectDocCategory =
+      targetType === 'vouchers'
+        ? 'disbursement'
+        : targetType === 'orders'
+        ? 'tor_order'
+        : 'other';
+    return {
+      enabled: false,
+      fiscalYearFilter: 'all',
+      project: null,
+      docCategory: defaultCategory,
+      fields: {
+        installment: '1',
+        result: 'pass',
+        status: 'pending',
+        remunerationType: 'inspection',
+        ...(voucherAmt ? { amount: voucherAmt } : {}),
+      },
+    };
+  };
+
+  const [projectSync, setProjectSync] = useState<ProjectSyncSelection>(() =>
+    createDefaultProjectSync('incoming')
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -145,6 +192,24 @@ export function DocumentWizardModal({
       setVoucherPayee(editingDoc.voucherPayee || '');
       setVoucherAmount(editingDoc.voucherAmount ? String(editingDoc.voucherAmount) : '');
       setVoucherProject(editingDoc.voucherProject || '');
+      const existingRecord = projectSyncMap[String(editingDoc.id)];
+      const baseSync = createDefaultProjectSync(
+        t,
+        editingDoc.voucherAmount ? String(editingDoc.voucherAmount) : ''
+      );
+      if (existingRecord) {
+        baseSync.docCategory = existingRecord.docCategory;
+        baseSync.fiscalYearFilter = String(existingRecord.fiscalYear || 'all');
+        baseSync.project = {
+          id: existingRecord.projectId,
+          projectCode: existingRecord.projectCode,
+          fiscalYear: existingRecord.fiscalYear,
+          name: existingRecord.projectName,
+          status: '',
+          contractNo: '',
+        };
+      }
+      setProjectSync(baseSync);
     } else {
       setStep(1);
       setDocType('incoming');
@@ -169,8 +234,9 @@ export function DocumentWizardModal({
       setVoucherPayee('');
       setVoucherAmount('');
       setVoucherProject('');
+      setProjectSync(createDefaultProjectSync('incoming'));
     }
-  }, [isOpen, editingDoc]);
+  }, [isOpen, editingDoc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentYearForDocType = getCurrentYearForType(docType);
 
@@ -260,6 +326,7 @@ export function DocumentWizardModal({
       if (nextType === 'memos' && !docDate) {
         setDocDate(getTodayISO());
       }
+      setProjectSync(createDefaultProjectSync(nextType, voucherAmount));
     }
   };
 
@@ -344,6 +411,10 @@ export function DocumentWizardModal({
     voucherProject: voucherProject.trim(),
     selectedFile,
     removeExistingAttachment,
+    projectSync:
+      ['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && projectSync.enabled
+        ? projectSync
+        : null,
   });
 
   const handleSaveFromStep2 = async () => {
@@ -352,6 +423,14 @@ export function DocumentWizardModal({
     if (err) {
       setStepError(err);
       return;
+    }
+    if (['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && projectSync.enabled) {
+      const syncErr = validateProjectSyncSelection(projectSync);
+      if (syncErr) {
+        setStep(3);
+        setStepError(syncErr);
+        return;
+      }
     }
     await onSubmit(buildPayload());
   };
@@ -367,6 +446,13 @@ export function DocumentWizardModal({
       setStep(2);
       setStepError(err);
       return;
+    }
+    if (['outgoing', 'memos', 'orders', 'vouchers'].includes(docType)) {
+      const syncErr = validateProjectSyncSelection(projectSync);
+      if (syncErr) {
+        setStepError(syncErr);
+        return;
+      }
     }
     await onSubmit(buildPayload());
   };
@@ -1082,6 +1168,24 @@ export function DocumentWizardModal({
                     </p>
                   )}
                 </div>
+
+                {/* Project System Sync Queue Section */}
+                {['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && (
+                  <ProjectSyncPanel
+                    value={projectSync}
+                    onChange={setProjectSync}
+                    existingSync={editingDoc ? projectSyncMap[String(editingDoc.id)] || null : null}
+                    disabled={isSubmitting}
+                    onDeleteSyncedQueue={onDeleteProjectQueue}
+                    isDeletingQueue={isDeletingProjectQueue}
+                    onRefreshQueueStatus={
+                      onRefreshQueueStatus
+                        ? () => onRefreshQueueStatus({ silent: false })
+                        : undefined
+                    }
+                    isRefreshingQueueStatus={isRefreshingQueueStatus}
+                  />
+                )}
               </div>
             )}
           </div>

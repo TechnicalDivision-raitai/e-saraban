@@ -19,6 +19,26 @@ import {
   loadDocsCache,
   saveDocsCache,
 } from './services/driveApi';
+import type {
+  ProjectSyncSelection,
+  SarabanAttachmentMeta,
+  SarabanProjectSyncRecord,
+} from './services/projectSyncApi';
+import {
+  deleteSarabanQueue,
+  fetchProjectOptions,
+  fetchSarabanQueueStatuses,
+  getProjectSyncRevision,
+  getQueueStatusMeta,
+  incrementProjectSyncRevision,
+  inferMimeTypeFromFileName,
+  loadProjectSyncMap,
+  markQueueAsDeleted,
+  pushSarabanQueue,
+  reconcileProjectSyncMap,
+  removeProjectSyncRecord,
+  saveProjectSyncRecord,
+} from './services/projectSyncApi';
 import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
 import { ADMIN_USER, STAFF_USER, TAB_TITLES } from './types/saraban';
 import {
@@ -27,6 +47,7 @@ import {
   formatThaiDateTime,
   getNextMemoDocNumber,
   getNextRegNoForYear,
+  getTodayISO,
   getUniqueNormalizedSuggestions,
   isOverdueDoc,
   mapRawRecordToDoc,
@@ -99,6 +120,13 @@ export default function App() {
   const [statusTargetDoc, setStatusTargetDoc] = useState<SarabanDoc | null>(null);
   const [isActionBusy, setIsActionBusy] = useState(false);
 
+  const [projectSyncMap, setProjectSyncMap] = useState<Record<string, SarabanProjectSyncRecord>>(
+    () => loadProjectSyncMap()
+  );
+  const [isSyncingToProject, setIsSyncingToProject] = useState(false);
+  const [isDeletingProjectQueue, setIsDeletingProjectQueue] = useState(false);
+  const [isRefreshingQueueStatuses, setIsRefreshingQueueStatuses] = useState(false);
+
   const [coverSheetDoc, setCoverSheetDoc] = useState<SarabanDoc | null>(null);
   const [registerReport, setRegisterReport] = useState<{
     title: string;
@@ -109,9 +137,20 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const queueSyncAbortRef = useRef<AbortController | null>(null);
   const lastLoadTimeRef = useRef<number>(0);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingWriteCountRef = useRef<number>(0);
+  const documentsRef = useRef<SarabanDoc[]>(documents);
+  const projectSyncMapRef = useRef<Record<string, SarabanProjectSyncRecord>>(projectSyncMap);
+
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
+
+  useEffect(() => {
+    projectSyncMapRef.current = projectSyncMap;
+  }, [projectSyncMap]);
 
   const pushToast = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
@@ -224,6 +263,105 @@ export default function App() {
     [documents.length, pushToast]
   );
 
+  const lastQueueSyncAtRef = useRef<number>(0);
+
+  const syncProjectQueueStatuses = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const { silent = false } = options;
+      if (queueSyncAbortRef.current) {
+        if (silent) return;
+        try {
+          queueSyncAbortRef.current.abort();
+        } catch {}
+      }
+      const controller = new AbortController();
+      queueSyncAbortRef.current = controller;
+      setIsRefreshingQueueStatuses(true);
+      const fetchStartedAt = Date.now();
+
+      try {
+        const remote = await fetchSarabanQueueStatuses(controller.signal);
+        if (controller.signal.aborted) return;
+
+        const existingDocIds = new Set(documentsRef.current.map((d) => String(d.id)));
+        const hasMissingNames = remote.items.some((item) => {
+          const existing = Object.values(projectSyncMapRef.current).find(
+            (r) => r.queueId === item.queueId || r.projectId === item.projectId
+          );
+          return !existing || !existing.projectName || existing.projectName.startsWith('โครงการ ');
+        });
+
+        let projectNameById: Map<string, string> | undefined;
+        if (hasMissingNames && remote.items.length > 0) {
+          try {
+            const projOptions = await fetchProjectOptions('all', controller.signal);
+            projectNameById = new Map(projOptions.map((p) => [p.id, p.name]));
+          } catch {}
+        }
+
+        const reconciled = reconcileProjectSyncMap(projectSyncMapRef.current, remote, {
+          existingDocIds,
+          projectNameById,
+          fetchStartedAt,
+        });
+        projectSyncMapRef.current = reconciled.nextMap;
+        setProjectSyncMap(reconciled.nextMap);
+        lastQueueSyncAtRef.current = Date.now();
+
+        if (reconciled.statusChanges.length === 1) {
+          const change = reconciled.statusChanges[0];
+          const meta = getQueueStatusMeta(change.toStatus);
+          pushToast(
+            meta.status === 'approved' ? 'success' : meta.status === 'rejected' ? 'error' : 'info',
+            `อัปเดตสถานะคิว ${change.queueId}: ${meta.shortLabel}`,
+            meta.status === 'rejected' && change.rejectReason
+              ? `เหตุผล: ${change.rejectReason}`
+              : `[${change.projectCode}]`
+          );
+        } else if (reconciled.statusChanges.length > 1) {
+          pushToast(
+            'success',
+            'อัปเดตสถานะคิวโครงการแล้ว',
+            `มีการเปลี่ยนแปลงสถานะ ${reconciled.statusChanges.length} รายการ (รอตรวจรับ ${remote.pendingCount} รายการ)`
+          );
+        } else if (reconciled.removedCount > 0) {
+          pushToast(
+            'info',
+            'ซิงค์สถานะคิวโครงการแล้ว',
+            `ล้างคิวที่ถูกลบจากฝั่งโครงการออก ${reconciled.removedCount} รายการ`
+          );
+        } else if (!silent) {
+          pushToast(
+            'info',
+            'ตรวจสอบสถานะคิวโครงการแล้ว',
+            remote.pendingCount > 0
+              ? `มีรายการรอตรวจรับในระบบโครงการ ${remote.pendingCount} รายการ`
+              : reconciled.hydratedCount > 0
+              ? `ซิงค์ข้อมูลคิวกลับจากระบบโครงการ ${reconciled.hydratedCount} รายการ`
+              : 'สถานะคิวทั้งหมดเป็นปัจจุบันแล้ว'
+          );
+        }
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return;
+        if (!silent) {
+          pushToast(
+            'error',
+            'ดึงสถานะคิวโครงการไม่สำเร็จ',
+            err instanceof Error ? err.message : 'ไม่สามารถเชื่อมต่อระบบงานโครงการได้'
+          );
+        }
+      } finally {
+        if (queueSyncAbortRef.current === controller) {
+          queueSyncAbortRef.current = null;
+        }
+        setIsRefreshingQueueStatuses(false);
+      }
+    },
+    [pushToast]
+  );
+
+  const hasSyncedQueuesWithDocsRef = useRef(false);
+
   useEffect(() => {
     const cached = loadDocsCache();
     if (cached.length > 0) {
@@ -232,6 +370,28 @@ export default function App() {
     }
     syncFromDrive({ silent: cached.length > 0 });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (documents.length > 0 && !hasSyncedQueuesWithDocsRef.current) {
+      hasSyncedQueuesWithDocsRef.current = true;
+      syncProjectQueueStatuses({ silent: true });
+    }
+  }, [documents.length, syncProjectQueueStatuses]);
+
+  useEffect(() => {
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (documentsRef.current.length === 0) return;
+      if (Date.now() - lastQueueSyncAtRef.current < 10000) return;
+      syncProjectQueueStatuses({ silent: true });
+    };
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+    return () => {
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+    };
+  }, [syncProjectQueueStatuses]);
 
   const isAdmin = currentUser.role === 'admin' && currentUser.name === 'นิศาชล คงดี';
 
@@ -334,21 +494,98 @@ export default function App() {
     setWizardOpen(true);
   };
 
+  const pendingProjectQueueCount = useMemo(
+    () =>
+      Object.values(projectSyncMap).filter(
+        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
+      ).length,
+    [projectSyncMap]
+  );
+
+  const syncSarabanDocToProject = useCallback(
+    async (params: {
+      docId: string | number;
+      selection: ProjectSyncSelection;
+      bookNo: string;
+      bookDate: string;
+      subject: string;
+      attachment: SarabanAttachmentMeta | null;
+    }) => {
+      if (!params.selection.project) {
+        throw new Error('กรุณาเลือกโครงการที่ต้องการเชื่อมโยง');
+      }
+      if (queueSyncAbortRef.current) {
+        try {
+          queueSyncAbortRef.current.abort();
+        } catch {}
+        queueSyncAbortRef.current = null;
+      }
+      const prevRecord = projectSyncMapRef.current[String(params.docId)];
+      if (prevRecord && String(prevRecord.queueStatus || '').toLowerCase() === 'rejected') {
+        markQueueAsDeleted(prevRecord);
+        incrementProjectSyncRevision(params.docId);
+      }
+
+      const res = await pushSarabanQueue({
+        docId: params.docId,
+        project: params.selection.project,
+        docCategory: params.selection.docCategory,
+        fields: params.selection.fields,
+        bookNo: params.bookNo,
+        bookDate: params.bookDate,
+        subject: params.subject,
+        attachment: params.attachment,
+        submittedBy: currentUser.name,
+        idempotencyRevision: getProjectSyncRevision(params.docId),
+      });
+
+      const queueId = res.queueId || `SQ-${Date.now()}`;
+      const record: SarabanProjectSyncRecord = {
+        docId: String(params.docId),
+        queueId,
+        idempotencyKey: res.idempotencyKey,
+        queueStatus: (res.queueStatus || 'pending').toLowerCase(),
+        projectId: params.selection.project.id,
+        projectCode: params.selection.project.projectCode,
+        projectName: params.selection.project.name,
+        fiscalYear: params.selection.project.fiscalYear,
+        docCategory: params.selection.docCategory,
+        bookNo: params.bookNo,
+        syncedAt: new Date().toISOString(),
+        duplicated: res.duplicated,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      const updatedMap = saveProjectSyncRecord(record);
+      projectSyncMapRef.current = updatedMap;
+      setProjectSyncMap(updatedMap);
+      pushToast(
+        'success',
+        res.duplicated ? 'เชื่อมโยงคิวโครงการแล้ว (ข้อมูลเดิม)' : `ส่งเข้าคิวโครงการแล้ว: ${queueId}`,
+        `[${params.selection.project.projectCode}] ${params.selection.project.name}`
+      );
+      return record;
+    },
+    [currentUser.name, pushToast]
+  );
+
   const handleSaveDocument = async (payload: DocumentFormPayload) => {
     if (!isAdmin) return;
 
     let uploadedFileName = '';
     let uploadedFileUrl = '';
+    let uploadedFileSize = 0;
+    let uploadedMimeType = '';
 
     if (payload.selectedFile) {
       setIsSubmittingDoc(true);
       setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
       try {
         const base64Data = await fileToBase64Data(payload.selectedFile);
+        const mimeType = payload.selectedFile.type || 'application/octet-stream';
         const uploadRes = await callDriveApi({
           action: 'uploadFile',
           fileData: base64Data,
-          mimeType: payload.selectedFile.type || 'application/octet-stream',
+          mimeType,
           fileName: payload.selectedFile.name,
         });
         if (!uploadRes.fileUrl) {
@@ -356,6 +593,8 @@ export default function App() {
         }
         uploadedFileName = payload.selectedFile.name;
         uploadedFileUrl = uploadRes.fileUrl;
+        uploadedFileSize = payload.selectedFile.size;
+        uploadedMimeType = mimeType;
       } catch (err) {
         setIsSubmittingDoc(false);
         setUploadPhaseLabel('');
@@ -482,6 +721,53 @@ export default function App() {
         },
         'บันทึกการแก้ไขลง Google Drive ไม่สำเร็จ'
       );
+
+      if (payload.projectSync?.enabled && payload.projectSync.project) {
+        const finalFileName = uploadedFileName
+          ? uploadedFileName
+          : payload.removeExistingAttachment
+          ? ''
+          : existingDoc?.fileName || '';
+        const finalFileUrl = uploadedFileUrl
+          ? uploadedFileUrl
+          : payload.removeExistingAttachment
+          ? ''
+          : existingDoc?.fileData || '';
+        const attachmentMeta: SarabanAttachmentMeta | null = finalFileUrl
+          ? {
+              fileName: finalFileName || 'เอกสารแนบ',
+              fileUrl: finalFileUrl,
+              ...(uploadedFileSize > 0 ? { fileSize: uploadedFileSize } : {}),
+              mimeType: uploadedMimeType || inferMimeTypeFromFileName(finalFileName),
+            }
+          : null;
+
+        try {
+          await syncSarabanDocToProject({
+            docId: payload.editId,
+            selection: payload.projectSync,
+            bookNo:
+              payload.type === 'vouchers'
+                ? payload.voucherNo || '-'
+                : payload.docNumber || '-',
+            bookDate:
+              payload.type === 'vouchers'
+                ? payload.voucherDate || getTodayISO()
+                : payload.docDate || getTodayISO(),
+            subject:
+              payload.type === 'vouchers'
+                ? payload.voucherProject || '-'
+                : payload.subject || '-',
+            attachment: attachmentMeta,
+          });
+        } catch (syncErr) {
+          pushToast(
+            'error',
+            'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
+            syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+          );
+        }
+      }
     } else {
       const nextRegNo =
         payload.type === 'incoming'
@@ -546,6 +832,43 @@ export default function App() {
         },
         'บันทึกข้อมูลลง Google Drive ไม่สำเร็จ'
       );
+
+      if (payload.projectSync?.enabled && payload.projectSync.project) {
+        const attachmentMeta: SarabanAttachmentMeta | null = uploadedFileUrl
+          ? {
+              fileName: uploadedFileName || 'เอกสารแนบ',
+              fileUrl: uploadedFileUrl,
+              ...(uploadedFileSize > 0 ? { fileSize: uploadedFileSize } : {}),
+              mimeType: uploadedMimeType || inferMimeTypeFromFileName(uploadedFileName),
+            }
+          : null;
+
+        try {
+          await syncSarabanDocToProject({
+            docId: newId,
+            selection: payload.projectSync,
+            bookNo:
+              payload.type === 'vouchers'
+                ? payload.voucherNo || '-'
+                : enforcedDocNumber || '-',
+            bookDate:
+              payload.type === 'vouchers'
+                ? payload.voucherDate || getTodayISO()
+                : payload.docDate || getTodayISO(),
+            subject:
+              payload.type === 'vouchers'
+                ? payload.voucherProject || '-'
+                : payload.subject || '-',
+            attachment: attachmentMeta,
+          });
+        } catch (syncErr) {
+          pushToast(
+            'error',
+            'ส่งข้อมูลเข้าระบบงานโครงการไม่สำเร็จ',
+            syncErr instanceof Error ? syncErr.message : 'กรุณาลองส่งใหม่อีกครั้งจากหน้ารายละเอียด'
+          );
+        }
+      }
     }
   };
 
@@ -789,6 +1112,147 @@ export default function App() {
     );
   };
 
+  const handleSyncDocFromDetail = async (
+    doc: SarabanDoc,
+    selection: ProjectSyncSelection,
+    quickFilePayload: QuickDetailSavePayload
+  ) => {
+    if (!isAdmin) return;
+    setIsSyncingToProject(true);
+    try {
+      let attachmentMeta: SarabanAttachmentMeta | null = null;
+
+      if (quickFilePayload.selectedFile) {
+        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive ก่อนส่งเข้าโครงการ...');
+        const base64Data = await fileToBase64Data(quickFilePayload.selectedFile);
+        const mimeType = quickFilePayload.selectedFile.type || 'application/octet-stream';
+        const uploadRes = await callDriveApi({
+          action: 'uploadFile',
+          fileData: base64Data,
+          mimeType,
+          fileName: quickFilePayload.selectedFile.name,
+        });
+        if (!uploadRes.fileUrl) {
+          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
+        }
+        const uploadedUrl = uploadRes.fileUrl;
+        const uploadedName = quickFilePayload.selectedFile.name;
+
+        const nextDocs = documents.map((d) =>
+          String(d.id) === String(doc.id)
+            ? {
+                ...d,
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                dueDate: quickFilePayload.dueDate,
+                fileName: uploadedName,
+                fileData: uploadedUrl,
+              }
+            : d
+        );
+        setDocuments(nextDocs);
+        saveDocsCache(nextDocs);
+        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
+        setDetailDoc(updatedDetail);
+
+        enqueueBackgroundWrite(
+          async () => {
+            await callDriveApi({
+              action: 'update',
+              id: doc.id,
+              type: doc.type,
+              updates: {
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                due_date: quickFilePayload.dueDate,
+                file_name: uploadedName,
+                file_url: uploadedUrl,
+              },
+            });
+          },
+          () => {},
+          'อัปเดตไฟล์แนบลง Google Drive ไม่สำเร็จ'
+        );
+
+        attachmentMeta = {
+          fileName: uploadedName,
+          fileUrl: uploadedUrl,
+          fileSize: quickFilePayload.selectedFile.size,
+          mimeType,
+        };
+      } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
+        attachmentMeta = {
+          fileName: doc.fileName || 'เอกสารแนบ',
+          fileUrl: doc.fileData.trim(),
+          mimeType: inferMimeTypeFromFileName(doc.fileName),
+        };
+      }
+
+      setUploadPhaseLabel('กำลังส่งข้อมูลเข้าระบบงานโครงการ...');
+      await syncSarabanDocToProject({
+        docId: doc.id,
+        selection,
+        bookNo:
+          doc.type === 'vouchers'
+            ? doc.voucherNo || '-'
+            : doc.docNumber || '-',
+        bookDate:
+          doc.type === 'vouchers'
+            ? doc.voucherDate || getTodayISO()
+            : doc.docDate || getTodayISO(),
+        subject:
+          doc.type === 'vouchers'
+            ? doc.voucherProject || '-'
+            : doc.subject || '-',
+        attachment: attachmentMeta,
+      });
+    } finally {
+      setIsSyncingToProject(false);
+      setUploadPhaseLabel('');
+    }
+  };
+
+  const handleDeleteProjectQueue = async (record: SarabanProjectSyncRecord) => {
+    if (!isAdmin) return;
+    setIsDeletingProjectQueue(true);
+    markQueueAsDeleted(record);
+    try {
+      const result = await deleteSarabanQueue(record);
+      const nextMap = removeProjectSyncRecord(record.docId);
+      projectSyncMapRef.current = nextMap;
+      setProjectSyncMap(nextMap);
+      incrementProjectSyncRevision(record.docId);
+
+      if (result.remoteDeleted) {
+        pushToast(
+          'success',
+          'ลบคิวส่งเข้าโครงการแล้ว',
+          `ลบ ${record.queueId} ออกจากทั้งสารบรรณและระบบงานโครงการเรียบร้อย`
+        );
+      } else {
+        pushToast(
+          'info',
+          'ลบคิวออกจากหน้าสารบรรณแล้ว',
+          `ซ่อนคิว ${record.queueId} และปลดล็อกให้ส่งใหม่ได้แล้ว (ฝั่งระบบโครงการยังไม่รองรับคำสั่ง deleteSarabanQueue อัตโนมัติ)`
+        );
+      }
+    } catch (err) {
+      const nextMap = removeProjectSyncRecord(record.docId);
+      projectSyncMapRef.current = nextMap;
+      setProjectSyncMap(nextMap);
+      incrementProjectSyncRevision(record.docId);
+      pushToast(
+        'warning',
+        'ลบคิวออกจากหน้าสารบรรณแล้ว',
+        err instanceof Error
+          ? `ฝั่งระบบโครงการตอบกลับ: ${err.message} (ระบบสารบรรณซ่อนคิวที่ผิดให้แล้ว และสามารถส่งใหม่ได้)`
+          : 'ลบคิวที่แสดงในหน้าสารบรรณแล้ว และปลดล็อกให้ส่งใหม่ได้'
+      );
+    } finally {
+      setIsDeletingProjectQueue(false);
+    }
+  };
+
   const handleImportExcel = async (type: DocType, yearStr: string, file: File) => {
     if (!isAdmin) return;
     pushToast('info', 'กำลังอ่านไฟล์ Excel...', file.name);
@@ -857,7 +1321,10 @@ export default function App() {
               docCount={documents.length}
               isSyncing={isSyncing || pendingWriteCount > 0}
               syncError={syncError}
-              onSync={() => syncFromDrive({ force: true })}
+              onSync={() => {
+                syncFromDrive({ force: true });
+                syncProjectQueueStatuses({ silent: true });
+              }}
               onOpenNewDoc={handleOpenNewDoc}
               onOpenMobileMenu={() => setMobileMenuOpen(true)}
               onToggleSidebar={handleToggleSidebar}
@@ -895,6 +1362,7 @@ export default function App() {
                 <RegisterTableView
                   tabId={activeTab as RegisterTabId}
                   documents={documents}
+                  projectSyncMap={projectSyncMap}
                   currentUser={currentUser}
                   isLoading={isLoadingDocs}
                   loadError={syncError}
@@ -914,6 +1382,9 @@ export default function App() {
                     setRegisterReport({ title, rows, filterLabel })
                   }
                   onRetrySync={() => syncFromDrive({ force: true })}
+                  onRefreshProjectQueues={() => syncProjectQueueStatuses({ silent: false })}
+                  isRefreshingProjectQueues={isRefreshingQueueStatuses}
+                  pendingProjectQueueCount={pendingProjectQueueCount}
                 />
               )}
             </main>
@@ -926,13 +1397,18 @@ export default function App() {
         isOpen={wizardOpen}
         editingDoc={editingDoc}
         documents={documents}
+        projectSyncMap={projectSyncMap}
         isSubmitting={isSubmittingDoc}
         uploadPhaseLabel={uploadPhaseLabel}
+        isDeletingProjectQueue={isDeletingProjectQueue}
+        isRefreshingQueueStatus={isRefreshingQueueStatuses}
         onClose={() => {
           setWizardOpen(false);
           setEditingDoc(null);
         }}
         onSubmit={handleSaveDocument}
+        onDeleteProjectQueue={handleDeleteProjectQueue}
+        onRefreshQueueStatus={syncProjectQueueStatuses}
       />
 
       <DocumentDetailModal
@@ -941,6 +1417,10 @@ export default function App() {
         assigneeSuggestions={assigneeSuggestions}
         isSavingQuickUpdate={isSubmittingDoc}
         uploadPhaseLabel={uploadPhaseLabel}
+        existingProjectSync={detailDoc ? projectSyncMap[String(detailDoc.id)] || null : null}
+        isSyncingToProject={isSyncingToProject}
+        isDeletingProjectQueue={isDeletingProjectQueue}
+        isRefreshingQueueStatus={isRefreshingQueueStatuses}
         onClose={() => setDetailDoc(null)}
         onEdit={handleEditDoc}
         onPrintCoverSheet={(doc) => {
@@ -948,6 +1428,9 @@ export default function App() {
           setCoverSheetDoc(doc);
         }}
         onQuickSave={handleQuickDetailSave}
+        onSyncToProject={handleSyncDocFromDetail}
+        onDeleteProjectQueue={handleDeleteProjectQueue}
+        onRefreshQueueStatus={syncProjectQueueStatuses}
       />
 
       <DeleteDocModal

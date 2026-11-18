@@ -65,7 +65,7 @@ async function startServer() {
       }
 
       const baseScriptUrl = resolveSafeScriptUrl(
-        req.header('x-apps-script-url') || parsedBody._scriptUrl
+        req.header('x-apps-script-url') || req.query._scriptUrl || parsedBody._scriptUrl
       );
       if ('_scriptUrl' in parsedBody) {
         delete parsedBody._scriptUrl;

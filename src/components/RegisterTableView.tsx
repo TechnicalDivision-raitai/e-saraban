@@ -2,6 +2,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CheckCircle2,
+  Clock,
   Download,
   Eye,
   FileSpreadsheet,
@@ -11,8 +13,11 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import type { SarabanProjectSyncRecord } from '../services/projectSyncApi';
+import { getQueueStatusMeta } from '../services/projectSyncApi';
 import type { DocType, SarabanDoc, SortState, TabId, UserSession } from '../types/saraban';
 import { TAB_TITLES } from '../types/saraban';
 import {
@@ -43,6 +48,7 @@ export type RegisterTabId = Exclude<TabId, 'dashboard' | 'vouchersSummary'>;
 interface RegisterTableViewProps {
   tabId: RegisterTabId;
   documents: SarabanDoc[];
+  projectSyncMap?: Record<string, SarabanProjectSyncRecord>;
   currentUser: UserSession;
   isLoading: boolean;
   loadError: string;
@@ -57,11 +63,15 @@ interface RegisterTableViewProps {
   onImportExcel: (type: DocType, yearStr: string, file: File) => void;
   onPrintRegisterReport: (title: string, rows: SarabanDoc[], filterLabel: string) => void;
   onRetrySync: () => void;
+  onRefreshProjectQueues?: () => void;
+  isRefreshingProjectQueues?: boolean;
+  pendingProjectQueueCount?: number;
 }
 
 export function RegisterTableView({
   tabId,
   documents,
+  projectSyncMap = {},
   currentUser,
   isLoading,
   loadError,
@@ -76,6 +86,9 @@ export function RegisterTableView({
   onImportExcel,
   onPrintRegisterReport,
   onRetrySync,
+  onRefreshProjectQueues,
+  isRefreshingProjectQueues = false,
+  pendingProjectQueueCount = 0,
 }: RegisterTableViewProps) {
   const isAdmin = currentUser.role === 'admin' && currentUser.name === 'นิศาชล คงดี';
 
@@ -240,6 +253,38 @@ export function RegisterTableView({
           )}
         </button>
       </th>
+    );
+  };
+
+  const renderProjectSyncTag = (doc: SarabanDoc) => {
+    const rec = projectSyncMap[String(doc.id)];
+    if (!rec) return null;
+    const statusMeta = getQueueStatusMeta(rec.queueStatus);
+    const reasonText =
+      statusMeta.status === 'rejected' && rec.rejectReason
+        ? ` (${rec.rejectReason})`
+        : '';
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewDoc(doc);
+        }}
+        title={`โครงการ: [${rec.projectCode}] ${rec.projectName} · สถานะ: ${statusMeta.label}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/ลบคิว`}
+        className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums transition-colors ${statusMeta.badgeClass}`}
+      >
+        {statusMeta.status === 'approved' ? (
+          <CheckCircle2 className="w-3 h-3 shrink-0" />
+        ) : statusMeta.status === 'rejected' ? (
+          <XCircle className="w-3 h-3 shrink-0" />
+        ) : (
+          <Clock className="w-3 h-3 shrink-0" />
+        )}
+        <span>
+          {statusMeta.shortLabel}: {rec.queueId}
+        </span>
+      </button>
     );
   };
 
@@ -412,6 +457,29 @@ export function RegisterTableView({
                 />
               </div>
             )}
+
+            {onRefreshProjectQueues &&
+              ['myInbox', 'outgoing', 'orders', 'memos', 'vouchers', 'allDocs'].includes(
+                tabId
+              ) && (
+                <button
+                  type="button"
+                  disabled={isRefreshingProjectQueues}
+                  onClick={onRefreshProjectQueues}
+                  title="ดึงสถานะคิวล่าสุด (Pending / Approved / Rejected) จากระบบงานโครงการ"
+                  className="bg-[#E0F2FE] hover:bg-[#BAE6FD] border border-[#7DD3FC] text-[#0C4A6E] px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isRefreshingProjectQueues ? 'animate-spin' : ''}`}
+                  />
+                  <span>เช็คสถานะโครงการ</span>
+                  {pendingProjectQueueCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#FEF3C7] border border-[#F59E0B] text-[#78350F] text-[11px] font-bold tabular-nums">
+                      รอ {pendingProjectQueueCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
             {canImportExport && isAdmin && (
               <>
@@ -675,6 +743,7 @@ export function RegisterTableView({
                             {d.type === 'vouchers' ? d.voucherProject || '-' : d.subject || '-'}
                           </div>
                           <div className="text-xs text-slate-500">{getPartyLabel(d)}</div>
+                          {renderProjectSyncTag(d)}
                         </td>
                         <td
                           className="p-3.5 text-center"
@@ -790,6 +859,7 @@ export function RegisterTableView({
                         <td className="p-3.5 max-w-md">
                           <div className="font-semibold text-slate-900">{d.subject || '-'}</div>
                           <div className="text-xs text-slate-500">ผู้รับ: {d.sender || '-'}</div>
+                          {renderProjectSyncTag(d)}
                         </td>
                         <td className="p-3.5 text-center">
                           <div className="inline-flex flex-col items-center gap-1">
@@ -823,7 +893,10 @@ export function RegisterTableView({
                             {formatThaiDate(d.docDate)}
                           </div>
                         </td>
-                        <td className="p-3.5 font-semibold text-slate-900">{d.subject || '-'}</td>
+                        <td className="p-3.5 font-semibold text-slate-900">
+                          <div>{d.subject || '-'}</div>
+                          {renderProjectSyncTag(d)}
+                        </td>
                         <td className="p-3.5 text-center">
                           <div className="inline-flex flex-col items-center gap-1">
                             <StatusHighlightBadge status={d.status} />
@@ -864,6 +937,7 @@ export function RegisterTableView({
                             เรียน: {d.sender || '-'}
                           </div>
                           <div className="text-xs text-slate-600">เรื่อง: {d.subject || '-'}</div>
+                          {renderProjectSyncTag(d)}
                         </td>
                         <td className="p-3.5 text-center">
                           <div className="inline-flex flex-col items-center gap-1">
@@ -923,6 +997,7 @@ export function RegisterTableView({
                           <div className="font-semibold text-slate-900">
                             {d.voucherProject || '-'}
                           </div>
+                          {renderProjectSyncTag(d)}
                         </td>
                         <td className="p-3.5 text-slate-800">{d.voucherPayee || '-'}</td>
                         <td className="p-3.5 text-right font-bold text-[#574F7D] tabular-nums whitespace-nowrap">
@@ -985,6 +1060,7 @@ export function RegisterTableView({
                           {d.subject || d.formName || d.voucherProject || '-'}
                         </div>
                         <div className="text-xs text-slate-500">{getPartyLabel(d)}</div>
+                        {renderProjectSyncTag(d)}
                       </td>
                       <td className="p-3.5 text-center">
                         <div className="inline-flex flex-col items-center gap-1">

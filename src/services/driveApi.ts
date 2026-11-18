@@ -79,7 +79,9 @@ function getDriveEndpoints(queryString = '', overrideUrl?: string): { url: strin
   const scriptUrl = (overrideUrl || getConfiguredScriptUrl()).trim();
   const sep = scriptUrl.includes('?') ? '&' : '?';
   const directUrl = queryString ? `${scriptUrl}${sep}${queryString}` : scriptUrl;
-  const proxyUrl = queryString ? `/api/drive-proxy?${queryString}` : '/api/drive-proxy';
+  const proxyParams = new URLSearchParams(queryString);
+  proxyParams.set('_scriptUrl', scriptUrl);
+  const proxyUrl = `/api/drive-proxy?${proxyParams.toString()}`;
 
   if (isPreviewHost()) {
     return [
@@ -179,7 +181,15 @@ export async function fetchDocumentsFromDrive(
       if (!parsed || parsed.status !== 'success') {
         throw new Error(parsed?.message || 'ไม่สามารถดึงข้อมูลจาก Google Drive ได้');
       }
-      return parseDriveListPayload(parsed);
+      const docs = parseDriveListPayload(parsed);
+      if (!overrideUrl && docs.length === 0 && scriptUrl !== DEFAULT_APPS_SCRIPT_URL) {
+        const defaultDocs = await fetchDocumentsFromDrive(signal, DEFAULT_APPS_SCRIPT_URL);
+        if (defaultDocs.length > 0) {
+          resetConfiguredScriptUrl();
+          return defaultDocs;
+        }
+      }
+      return docs;
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') throw err;
       lastError = err;
