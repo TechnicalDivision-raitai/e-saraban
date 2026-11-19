@@ -18,6 +18,7 @@ import {
   fetchDocumentsFromDrive,
   loadDocsCache,
   saveDocsCache,
+  uploadFileToDrive,
 } from './services/driveApi';
 import type {
   ProcurementSyncSelection,
@@ -61,7 +62,6 @@ import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSe
 import { ADMIN_USER, STAFF_USER, TAB_TITLES } from './types/saraban';
 import {
   exportRegisterCSV,
-  fileToBase64Data,
   formatThaiDateTime,
   getNextMemoDocNumber,
   getNextRegNoForYear,
@@ -796,23 +796,15 @@ export default function App() {
 
     if (payload.selectedFile) {
       setIsSubmittingDoc(true);
-      setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
+      setUploadPhaseLabel('กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...');
       try {
-        const base64Data = await fileToBase64Data(payload.selectedFile);
-        const mimeType = payload.selectedFile.type || 'application/octet-stream';
-        const uploadRes = await callDriveApi({
-          action: 'uploadFile',
-          fileData: base64Data,
-          mimeType,
-          fileName: payload.selectedFile.name,
+        const uploaded = await uploadFileToDrive(payload.selectedFile, {
+          onPhase: setUploadPhaseLabel,
         });
-        if (!uploadRes.fileUrl) {
-          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
-        }
-        uploadedFileName = payload.selectedFile.name;
-        uploadedFileUrl = uploadRes.fileUrl;
-        uploadedFileSize = payload.selectedFile.size;
-        uploadedMimeType = mimeType;
+        uploadedFileName = uploaded.fileName;
+        uploadedFileUrl = uploaded.fileUrl;
+        uploadedFileSize = uploaded.fileSize;
+        uploadedMimeType = uploaded.mimeType;
       } catch (err) {
         setIsSubmittingDoc(false);
         setUploadPhaseLabel('');
@@ -1274,20 +1266,13 @@ export default function App() {
 
     if (payload.selectedFile) {
       setIsSubmittingDoc(true);
-      setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive...');
+      setUploadPhaseLabel('กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...');
       try {
-        const base64Data = await fileToBase64Data(payload.selectedFile);
-        const uploadRes = await callDriveApi({
-          action: 'uploadFile',
-          fileData: base64Data,
-          mimeType: payload.selectedFile.type || 'application/octet-stream',
-          fileName: payload.selectedFile.name,
+        const uploaded = await uploadFileToDrive(payload.selectedFile, {
+          onPhase: setUploadPhaseLabel,
         });
-        if (!uploadRes.fileUrl) {
-          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
-        }
-        uploadedFileName = payload.selectedFile.name;
-        uploadedFileUrl = uploadRes.fileUrl;
+        uploadedFileName = uploaded.fileName;
+        uploadedFileUrl = uploaded.fileUrl;
       } catch (err) {
         setIsSubmittingDoc(false);
         setUploadPhaseLabel('');
@@ -1387,20 +1372,12 @@ export default function App() {
       let attachmentMeta: SarabanAttachmentMeta | null = null;
 
       if (quickFilePayload.selectedFile) {
-        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive ก่อนส่งเข้าโครงการ...');
-        const base64Data = await fileToBase64Data(quickFilePayload.selectedFile);
-        const mimeType = quickFilePayload.selectedFile.type || 'application/octet-stream';
-        const uploadRes = await callDriveApi({
-          action: 'uploadFile',
-          fileData: base64Data,
-          mimeType,
-          fileName: quickFilePayload.selectedFile.name,
+        const uploaded = await uploadFileToDrive(quickFilePayload.selectedFile, {
+          onPhase: setUploadPhaseLabel,
+          phaseSuffix: 'ก่อนส่งเข้าโครงการ',
         });
-        if (!uploadRes.fileUrl) {
-          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
-        }
-        const uploadedUrl = uploadRes.fileUrl;
-        const uploadedName = quickFilePayload.selectedFile.name;
+        const uploadedUrl = uploaded.fileUrl;
+        const uploadedName = uploaded.fileName;
 
         const nextDocs = documents.map((d) =>
           String(d.id) === String(doc.id)
@@ -1441,8 +1418,8 @@ export default function App() {
         attachmentMeta = {
           fileName: uploadedName,
           fileUrl: uploadedUrl,
-          fileSize: quickFilePayload.selectedFile.size,
-          mimeType,
+          fileSize: uploaded.fileSize,
+          mimeType: uploaded.mimeType,
         };
       } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
         attachmentMeta = {
@@ -1528,20 +1505,12 @@ export default function App() {
       let attachmentMeta: SarabanAttachmentMeta | null = null;
 
       if (quickFilePayload.selectedFile) {
-        setUploadPhaseLabel('กำลังอัปโหลดไฟล์ขึ้น Drive ก่อนส่งเข้าจัดซื้อจัดจ้าง...');
-        const base64Data = await fileToBase64Data(quickFilePayload.selectedFile);
-        const mimeType = quickFilePayload.selectedFile.type || 'application/octet-stream';
-        const uploadRes = await callDriveApi({
-          action: 'uploadFile',
-          fileData: base64Data,
-          mimeType,
-          fileName: quickFilePayload.selectedFile.name,
+        const uploaded = await uploadFileToDrive(quickFilePayload.selectedFile, {
+          onPhase: setUploadPhaseLabel,
+          phaseSuffix: 'ก่อนส่งเข้าจัดซื้อจัดจ้าง',
         });
-        if (!uploadRes.fileUrl) {
-          throw new Error(uploadRes.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
-        }
-        const uploadedUrl = uploadRes.fileUrl;
-        const uploadedName = quickFilePayload.selectedFile.name;
+        const uploadedUrl = uploaded.fileUrl;
+        const uploadedName = uploaded.fileName;
 
         const nextDocs = documents.map((d) =>
           String(d.id) === String(doc.id)
@@ -1582,8 +1551,8 @@ export default function App() {
         attachmentMeta = {
           fileName: uploadedName,
           fileUrl: uploadedUrl,
-          fileSize: quickFilePayload.selectedFile.size,
-          mimeType,
+          fileSize: uploaded.fileSize,
+          mimeType: uploaded.mimeType,
         };
       } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
         attachmentMeta = {

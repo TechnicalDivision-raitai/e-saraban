@@ -57,25 +57,34 @@ async function startServer() {
 
   app.post('/api/drive-proxy', async (req: Request, res: Response) => {
     try {
-      let parsedBody: Record<string, unknown> = {};
-      if (typeof req.body === 'string') {
-        parsedBody = JSON.parse(req.body || '{}') as Record<string, unknown>;
-      } else if (req.body && typeof req.body === 'object') {
-        parsedBody = { ...(req.body as Record<string, unknown>) };
-      }
+      const headerOrQueryUrl = req.header('x-apps-script-url') || req.query._scriptUrl;
+      let baseScriptUrl: string;
+      let outgoingBody: string;
 
-      const baseScriptUrl = resolveSafeScriptUrl(
-        req.header('x-apps-script-url') || req.query._scriptUrl || parsedBody._scriptUrl
-      );
-      if ('_scriptUrl' in parsedBody) {
-        delete parsedBody._scriptUrl;
+      if (typeof req.body === 'string' && headerOrQueryUrl) {
+        baseScriptUrl = resolveSafeScriptUrl(headerOrQueryUrl);
+        outgoingBody = req.body || '{}';
+      } else {
+        let parsedBody: Record<string, unknown> = {};
+        if (typeof req.body === 'string') {
+          parsedBody = JSON.parse(req.body || '{}') as Record<string, unknown>;
+        } else if (req.body && typeof req.body === 'object') {
+          parsedBody = { ...(req.body as Record<string, unknown>) };
+        }
+
+        baseScriptUrl = resolveSafeScriptUrl(headerOrQueryUrl || parsedBody._scriptUrl);
+        if ('_scriptUrl' in parsedBody) {
+          delete parsedBody._scriptUrl;
+        }
+        outgoingBody = JSON.stringify(parsedBody);
       }
 
       const upstream = await fetch(baseScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(parsedBody),
+        body: outgoingBody,
         redirect: 'follow',
+        signal: AbortSignal.timeout(240_000),
       });
       const text = await upstream.text();
       res.setHeader('Cache-Control', 'no-store');
@@ -108,9 +117,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
+  server.requestTimeout = 240_000;
+  server.headersTimeout = 60_000;
+  server.keepAliveTimeout = 65_000;
 }
 
 startServer().catch((err) => {

@@ -586,6 +586,18 @@ export function excelDateToISOString(excelDate: unknown): string {
   return getTodayISO();
 }
 
+export const MAX_UPLOAD_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (GAS Base64 ~33.3 MB ceiling)
+const IMAGE_COMPRESS_THRESHOLD_BYTES = 1.2 * 1024 * 1024; // 1.2 MB
+const IMAGE_MAX_DIMENSION_PX = 2200;
+
+export function formatFileSizeLabel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 export function fileToBase64Data(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -597,6 +609,120 @@ export function fileToBase64Data(file: File): Promise<string> {
     };
     reader.onerror = (err) => reject(err);
   });
+}
+
+function loadImageElement(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(img);
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(err);
+    };
+    img.src = objectUrl;
+  });
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+  });
+}
+
+async function compressImageIfBeneficial(file: File): Promise<{ file: File; compressed: boolean }> {
+  const mime = String(file.type || '').toLowerCase();
+  const isCompressibleImage =
+    mime === 'image/jpeg' || mime === 'image/jpg' || mime === 'image/png' || mime === 'image/webp';
+  if (!isCompressibleImage || file.size <= IMAGE_COMPRESS_THRESHOLD_BYTES) {
+    return { file, compressed: false };
+  }
+
+  try {
+    const img = await loadImageElement(file);
+    const naturalW = img.naturalWidth || img.width;
+    const naturalH = img.naturalHeight || img.height;
+    if (!naturalW || !naturalH) {
+      return { file, compressed: false };
+    }
+
+    const scale = Math.min(1, IMAGE_MAX_DIMENSION_PX / Math.max(naturalW, naturalH));
+    const targetW = Math.max(1, Math.round(naturalW * scale));
+    const targetH = Math.max(1, Math.round(naturalH * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { file, compressed: false };
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    let blob = await canvasToJpegBlob(canvas, 0.82);
+    if (blob && blob.size > 2 * 1024 * 1024) {
+      const smallerBlob = await canvasToJpegBlob(canvas, 0.72);
+      if (smallerBlob && smallerBlob.size < blob.size) {
+        blob = smallerBlob;
+      }
+    }
+
+    if (!blob || blob.size >= file.size * 0.92) {
+      return { file, compressed: false };
+    }
+
+    const nextName = file.name.replace(/\.(png|webp|jpeg|jpg)$/i, '.jpg');
+    const compressedFile = new File([blob], nextName, {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    });
+    return { file: compressedFile, compressed: true };
+  } catch {
+    return { file, compressed: false };
+  }
+}
+
+export async function prepareFileForUpload(
+  file: File,
+  onPhase?: (label: string) => void
+): Promise<{
+  base64Data: string;
+  mimeType: string;
+  fileName: string;
+  fileSize: number;
+  originalSize: number;
+  compressed: boolean;
+}> {
+  const originalSize = file.size;
+  const mime = String(file.type || '').toLowerCase();
+  if (
+    (mime === 'image/jpeg' || mime === 'image/jpg' || mime === 'image/png' || mime === 'image/webp') &&
+    originalSize > IMAGE_COMPRESS_THRESHOLD_BYTES
+  ) {
+    onPhase?.(`กำลังย่อขนาดรูปภาพ (${formatFileSizeLabel(originalSize)}) เพื่อให้อัปโหลดเร็วขึ้น...`);
+  }
+
+  const { file: readyFile, compressed } = await compressImageIfBeneficial(file);
+
+  if (readyFile.size > MAX_UPLOAD_FILE_SIZE_BYTES) {
+    throw new Error(
+      `ไฟล์มีขนาดใหญ่เกิน 25 MB (ขนาดปัจจุบัน ${formatFileSizeLabel(readyFile.size)}) กรุณาลดขนาดไฟล์ PDF หรืออัปโหลดลง Google Drive แล้วคัดลอกลิงก์แทน`
+    );
+  }
+
+  const base64Data = await fileToBase64Data(readyFile);
+  return {
+    base64Data,
+    mimeType: readyFile.type || 'application/octet-stream',
+    fileName: readyFile.name,
+    fileSize: readyFile.size,
+    originalSize,
+    compressed,
+  };
 }
 
 export async function parseExcelToImportRecords(

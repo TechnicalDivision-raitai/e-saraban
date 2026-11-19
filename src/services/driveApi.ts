@@ -1,5 +1,11 @@
 import type { RawSarabanRecord, SarabanDoc } from '../types/saraban';
-import { docToRawRecord, mapRawRecordToDoc, normalizeMemoDocNumbers } from '../utils/sarabanUtils';
+import {
+  docToRawRecord,
+  formatFileSizeLabel,
+  mapRawRecordToDoc,
+  normalizeMemoDocNumbers,
+  prepareFileForUpload,
+} from '../utils/sarabanUtils';
 
 export const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
@@ -92,6 +98,24 @@ function getDriveEndpoints(queryString = '', overrideUrl?: string): { url: strin
   return [{ url: directUrl, useProxyHeader: false }];
 }
 
+class RequestTimeoutError extends Error {
+  readonly isTimeout = true;
+  constructor(message = 'การเชื่อมต่อใช้เวลานานเกินกำหนด') {
+    super(message);
+    this.name = 'RequestTimeoutError';
+  }
+}
+
+function isTimeoutError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof RequestTimeoutError) return true;
+  if (typeof err === 'object' && 'isTimeout' in err && (err as { isTimeout?: boolean }).isTimeout) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes('ใช้เวลานานเกินกำหนด') || msg.includes('timeout');
+}
+
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
@@ -99,6 +123,7 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const externalSignal = options.signal;
+  let timedOut = false;
 
   if (externalSignal) {
     if (externalSignal.aborted) {
@@ -110,7 +135,10 @@ async function fetchWithTimeout(
     }
   }
 
-  const timer = setTimeout(() => controller.abort(new Error('การเชื่อมต่อใช้เวลานานเกินกำหนด')), timeoutMs);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new RequestTimeoutError('การเชื่อมต่อใช้เวลานานเกินกำหนด'));
+  }, timeoutMs);
 
   try {
     const isRelative = url.startsWith('/');
@@ -121,6 +149,11 @@ async function fetchWithTimeout(
       redirect: 'follow',
       signal: controller.signal,
     });
+  } catch (err) {
+    if (timedOut) {
+      throw new RequestTimeoutError('การเชื่อมต่อใช้เวลานานเกินกำหนด');
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -207,6 +240,9 @@ export async function callDriveApi<T = Record<string, unknown>>(
 ): Promise<T & { status: string; message?: string; fileUrl?: string }> {
   const scriptUrl = (overrideUrl || getConfiguredScriptUrl()).trim();
   const endpoints = getDriveEndpoints('', scriptUrl);
+  const action = String(payload.action || '');
+  const timeoutMs =
+    action === 'uploadFile' ? 180000 : action === 'insertBatch' ? 90000 : 30000;
   let lastError: unknown = null;
 
   for (const endpoint of endpoints) {
@@ -225,7 +261,7 @@ export async function callDriveApi<T = Record<string, unknown>>(
           headers,
           body: JSON.stringify(payload),
         },
-        30000
+        timeoutMs
       );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -238,12 +274,116 @@ export async function callDriveApi<T = Record<string, unknown>>(
       return result;
     } catch (err) {
       lastError = err;
+      if (isTimeoutError(err) && action === 'uploadFile') {
+        break;
+      }
     }
   }
 
   throw lastError instanceof Error
     ? lastError
     : new Error('ไม่สามารถดำเนินการกับ Google Drive ได้');
+}
+
+export interface UploadedDriveFileResult {
+  fileName: string;
+  fileUrl: string;
+  fileSize: number;
+  mimeType: string;
+  compressed: boolean;
+}
+
+export async function uploadFileToDrive(
+  file: File,
+  options: {
+    onPhase?: (label: string) => void;
+    overrideUrl?: string;
+    phaseSuffix?: string;
+  } = {}
+): Promise<UploadedDriveFileResult> {
+  const prepared = await prepareFileForUpload(file, options.onPhase);
+  const sizeLabel = formatFileSizeLabel(prepared.fileSize);
+  const suffix = options.phaseSuffix ? ` ${options.phaseSuffix}` : '';
+  options.onPhase?.(
+    prepared.compressed
+      ? `ย่อรูปเหลือ ${sizeLabel} · กำลังอัปโหลดขึ้น Drive${suffix}...`
+      : `กำลังอัปโหลดไฟล์ขึ้น Drive (${sizeLabel})${suffix}...`
+  );
+
+  const scriptUrl = (options.overrideUrl || getConfiguredScriptUrl()).trim();
+  const bodyStr = JSON.stringify({
+    action: 'uploadFile',
+    fileData: prepared.base64Data,
+    mimeType: prepared.mimeType,
+    fileName: prepared.fileName,
+  });
+
+  // Upload directly to Google Apps Script first (1 hop, faster, bypasses Cloud Run 32 MB proxy limit).
+  // Fall back to /api/drive-proxy only on non-timeout network/CORS errors when payload fits proxy limits.
+  const proxyParams = new URLSearchParams();
+  proxyParams.set('_scriptUrl', scriptUrl);
+  const proxyUrl = `/api/drive-proxy?${proxyParams.toString()}`;
+
+  const endpoints: { url: string; useProxyHeader: boolean }[] = [
+    { url: scriptUrl, useProxyHeader: false },
+  ];
+  if (isPreviewHost() && bodyStr.length <= 28 * 1024 * 1024) {
+    endpoints.push({ url: proxyUrl, useProxyHeader: true });
+  }
+
+  let lastError: unknown = null;
+  for (const endpoint of endpoints) {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/plain;charset=utf-8',
+      };
+      if (endpoint.useProxyHeader) {
+        headers['x-apps-script-url'] = scriptUrl;
+      }
+
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        {
+          method: 'POST',
+          headers,
+          body: bodyStr,
+        },
+        180000
+      );
+
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error('ไฟล์มีขนาดใหญ่เกินที่ระบบรับได้ กรุณาลดขนาดไฟล์ก่อนอัปโหลด');
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const text = await response.text();
+      const result = JSON.parse(text) as { status?: string; message?: string; fileUrl?: string };
+      if (!result || result.status !== 'success' || !result.fileUrl) {
+        throw new Error(result?.message || 'อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
+      }
+
+      return {
+        fileName: prepared.fileName,
+        fileUrl: result.fileUrl,
+        fileSize: prepared.fileSize,
+        mimeType: prepared.mimeType,
+        compressed: prepared.compressed,
+      };
+    } catch (err) {
+      lastError = err;
+      if (isTimeoutError(err)) {
+        throw new Error(
+          `อัปโหลดไฟล์ (${sizeLabel}) ใช้เวลานานเกิน 3 นาที กรุณาตรวจสอบสัญญาณอินเทอร์เน็ต หรือลดขนาดไฟล์ PDF ก่อนลองใหม่`
+        );
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('อัปโหลดไฟล์ไปยัง Google Drive ไม่สำเร็จ');
 }
 
 export async function pingAppsScript(urlToTest: string): Promise<{
