@@ -1,4 +1,4 @@
-import { getTodayISO, normalizeDateToISO } from '../utils/sarabanUtils';
+import { normalizeDateToISO } from '../utils/sarabanUtils';
 import type { QueueStatusChangeEvent, SarabanAttachmentMeta, SarabanQueueStatus } from './projectSyncApi';
 import { getQueueStatusMeta, inferMimeTypeFromFileName } from './projectSyncApi';
 
@@ -10,6 +10,7 @@ const PROCUREMENT_SYNC_REVISION_KEY = 'esaraban_procurement_sync_revisions_v1';
 const DELETED_PROCUREMENT_QUEUES_KEY = 'esaraban_deleted_procurement_queues_v1';
 
 export type ProcurementDocCategory =
+  | 'general_approval'
   | 'tor_order'
   | 'tor_approval'
   | 'ref_price'
@@ -23,30 +24,35 @@ export interface ProcurementCategoryMeta {
 
 export const PROCUREMENT_DOC_CATEGORIES: ProcurementCategoryMeta[] = [
   {
+    value: 'general_approval',
+    label: '1. ขออนุมัติ (ข้อมูลทั่วไป - ส่งเฉพาะไฟล์แนบ)',
+    hint: 'เชื่อมไปยังหน้าข้อมูลทั่วไป โดยส่งเฉพาะไฟล์แนบเท่านั้น เพื่อไม่ให้ข้อความไปกระทบรายการตั้งต้นโครงการ',
+  },
+  {
     value: 'tor_order',
-    label: 'คำสั่งแต่งตั้ง กก. TOR / ราคากลาง',
-    hint: 'ระบุผู้รับผิดชอบหลักหรือหมายเหตุเพิ่มเติม (ไม่บังคับ)',
+    label: '2. แต่งตั้งผู้รับผิดชอบ TOR และราคากลาง',
+    hint: 'ส่งเลขที่คำสั่ง วันที่คำสั่ง และผู้รับผิดชอบ (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
   {
     value: 'tor_approval',
-    label: 'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง',
-    hint: 'ระบุผู้จัดทำ TOR และ/หรือ วงเงินราคากลาง (บาท) ในกระบวนการเดียวกัน',
+    label: '3. จัดทำ TOR และราคากลาง',
+    hint: 'ส่งวงเงินราคากลาง ไม่ต้องระบุผู้จัดทำเนื่องจากอ้างอิงตามคำสั่ง (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
   {
     value: 'disbursement',
-    label: 'ฎีกาเบิกจ่ายเงิน',
-    hint: 'ระบุงวดงาน จำนวนเงิน และสถานะการเบิกจ่าย',
+    label: '4. ฎีกาเบิกจ่ายเงิน',
+    hint: 'ส่งงวดที่ จำนวนเงิน สถานะ และเลขที่ฎีกา (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
 ];
 
 export function getProcurementCategoryLabel(category?: string): string {
   if (category === 'ref_price') {
-    return 'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง';
+    return '3. จัดทำ TOR และราคากลาง';
   }
   return (
     PROCUREMENT_DOC_CATEGORIES.find((c) => c.value === category)?.label ||
     category ||
-    'ขออนุมัติ / จัดทำ TOR / จัดทำราคากลาง'
+    '1. ขออนุมัติ (ข้อมูลทั่วไป - ส่งเฉพาะไฟล์แนบ)'
   );
 }
 
@@ -62,14 +68,13 @@ export interface ProcurementOption {
 }
 
 export interface ProcurementSyncCategoryFields {
+  orderNo?: string;
+  orderDate?: string;
   assigneeName?: string;
-  notes?: string;
-  torAuthor?: string;
-  details?: string;
   refPrice?: string;
   installment?: string;
   amount?: string;
-  status?: 'pending' | 'paid';
+  status?: '' | 'pending' | 'paid';
   voucherNo?: string;
 }
 
@@ -299,13 +304,27 @@ export async function fetchProcurementOptions(
 }
 
 function toISOCEDate(value?: string): string {
-  if (!value || !String(value).trim()) return '';
+  if (!value || !String(value).trim() || String(value).trim() === '-') return '';
   return normalizeDateToISO(value);
 }
 
-function toPositiveNumber(value?: string, fallback = 0): number {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+function cleanOptionalText(value?: string): string {
+  const trimmed = String(value || '').trim();
+  return trimmed && trimmed !== '-' ? trimmed : '';
+}
+
+function parseOptionalPositiveNumber(value?: string): number | undefined {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return undefined;
+  const num = Number(trimmed);
+  return Number.isFinite(num) && num > 0 ? num : undefined;
+}
+
+function parseOptionalPositiveInt(value?: string): number | undefined {
+  const num = parseOptionalPositiveNumber(value);
+  if (num === undefined) return undefined;
+  const rounded = Math.round(num);
+  return rounded >= 1 ? rounded : undefined;
 }
 
 export function buildProcurementCategoryPayload(
@@ -313,31 +332,40 @@ export function buildProcurementCategoryPayload(
   fields: ProcurementSyncCategoryFields
 ): Record<string, unknown> {
   switch (docCategory) {
-    case 'tor_order':
+    case 'general_approval':
       return {
-        ...(fields.assigneeName?.trim() ? { assigneeName: fields.assigneeName.trim() } : {}),
-        ...(fields.notes?.trim() ? { notes: fields.notes.trim() } : {}),
+        attachmentOnly: true,
+        targetSection: 'general_info',
       };
-    case 'tor_approval': {
-      const refPriceNum = toPositiveNumber(fields.refPrice, 0);
+    case 'tor_order': {
+      const orderNo = cleanOptionalText(fields.orderNo);
+      const orderDate = toISOCEDate(fields.orderDate);
+      const assigneeName = cleanOptionalText(fields.assigneeName);
       return {
-        torAuthor: (fields.torAuthor || '').trim(),
-        ...(refPriceNum > 0 ? { refPrice: refPriceNum } : {}),
-        ...(fields.details?.trim() ? { details: fields.details.trim() } : {}),
+        ...(orderNo ? { orderNo } : {}),
+        ...(orderDate ? { orderDate } : {}),
+        ...(assigneeName ? { assigneeName } : {}),
       };
     }
-    case 'ref_price':
+    case 'tor_approval':
+    case 'ref_price': {
+      const refPrice = parseOptionalPositiveNumber(fields.refPrice);
       return {
-        refPrice: toPositiveNumber(fields.refPrice, 0),
-        ...(fields.details?.trim() ? { details: fields.details.trim() } : {}),
+        ...(refPrice !== undefined ? { refPrice } : {}),
       };
-    case 'disbursement':
+    }
+    case 'disbursement': {
+      const installment = parseOptionalPositiveInt(fields.installment);
+      const amount = parseOptionalPositiveNumber(fields.amount);
+      const status = fields.status === 'pending' || fields.status === 'paid' ? fields.status : '';
+      const voucherNo = cleanOptionalText(fields.voucherNo);
       return {
-        installment: Math.max(1, Math.round(toPositiveNumber(fields.installment, 1)) || 1),
-        amount: toPositiveNumber(fields.amount, 0),
-        status: fields.status || 'pending',
-        ...(fields.voucherNo?.trim() ? { voucherNo: fields.voucherNo.trim() } : {}),
+        ...(installment !== undefined ? { installment } : {}),
+        ...(amount !== undefined ? { amount } : {}),
+        ...(status ? { status } : {}),
+        ...(voucherNo ? { voucherNo } : {}),
       };
+    }
   }
 }
 
@@ -347,23 +375,6 @@ export function validateProcurementSyncSelection(
   if (!selection.enabled) return null;
   if (!selection.procurement) {
     return 'กรุณาเลือกรายการจัดซื้อจัดจ้างที่ต้องการเชื่อมโยง';
-  }
-  const f = selection.fields;
-  switch (selection.docCategory) {
-    case 'tor_approval':
-      if (!f.torAuthor?.trim() && (!f.refPrice || Number(f.refPrice) <= 0)) {
-        return 'กรุณาระบุชื่อผู้จัดทำ TOR หรือวงเงินราคากลางอย่างน้อย 1 รายการ';
-      }
-      break;
-    case 'ref_price':
-      if (!f.refPrice || Number(f.refPrice) <= 0) return 'กรุณาระบุวงเงินราคากลาง';
-      break;
-    case 'disbursement':
-      if (!f.amount || Number(f.amount) <= 0) return 'กรุณาระบุจำนวนเงินเบิกจ่ายตามฎีกา';
-      break;
-    case 'tor_order':
-    default:
-      break;
   }
   return null;
 }
@@ -382,13 +393,32 @@ export function buildProcurementIdempotencyKey(
 export async function pushProcurementQueue(
   input: ProcurementQueuePushInput
 ): Promise<ProcurementQueuePushResponse> {
-  const isoBookDate = toISOCEDate(input.bookDate) || getTodayISO();
-  const fiscalYearNum = Number(input.procurement.fiscalYear) || 2569;
+  const fiscalYearNum = Number(input.procurement.fiscalYear) || 0;
   const idempotencyKey = buildProcurementIdempotencyKey(
     input.docId,
     input.docCategory,
     input.idempotencyRevision
   );
+
+  const isAttachmentOnly = input.docCategory === 'general_approval';
+  const outgoingBookNo = isAttachmentOnly
+    ? ''
+    : input.docCategory === 'tor_order'
+    ? cleanOptionalText(input.fields.orderNo)
+    : input.docCategory === 'disbursement'
+    ? cleanOptionalText(input.fields.voucherNo) || cleanOptionalText(input.bookNo)
+    : cleanOptionalText(input.bookNo);
+
+  const outgoingBookDate = isAttachmentOnly
+    ? ''
+    : input.docCategory === 'tor_order'
+    ? toISOCEDate(input.fields.orderDate)
+    : toISOCEDate(input.bookDate);
+
+  const outgoingSubject =
+    isAttachmentOnly || input.docCategory === 'tor_order'
+      ? ''
+      : cleanOptionalText(input.subject);
 
   const requestBody = {
     action: 'pushProcurementQueue',
@@ -397,9 +427,9 @@ export async function pushProcurementQueue(
     projectCode: input.procurement.projectCode,
     fiscalYear: fiscalYearNum,
     docCategory: input.docCategory,
-    bookNo: input.bookNo.trim() || '-',
-    bookDate: isoBookDate,
-    subject: input.subject.trim() || '-',
+    bookNo: outgoingBookNo,
+    bookDate: outgoingBookDate,
+    subject: outgoingSubject,
     payload: buildProcurementCategoryPayload(input.docCategory, input.fields),
     attachment: input.attachment
       ? {
@@ -412,7 +442,7 @@ export async function pushProcurementQueue(
             input.attachment.mimeType || inferMimeTypeFromFileName(input.attachment.fileName),
         }
       : null,
-    submittedBy: input.submittedBy.trim() || 'เจ้าหน้าที่สารบรรณ',
+    submittedBy: cleanOptionalText(input.submittedBy),
   };
 
   const endpoints = getEndpoints('');

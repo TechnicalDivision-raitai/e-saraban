@@ -202,7 +202,7 @@ export function ProcurementSyncPanel({
           />
           <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#134E4A]">
             <ShoppingBag className="w-4 h-4 text-[#0F766E]" />
-            <span>ส่งเข้าระบบงานจัดซื้อจัดจ้าง (TOR / ราคากลาง / ฎีกา)</span>
+            <span>ส่งเข้าระบบงานจัดซื้อจัดจ้าง (ขออนุมัติ / TOR / ราคากลาง / ฎีกา)</span>
           </span>
         </label>
 
@@ -494,10 +494,10 @@ export function ProcurementSyncPanel({
             </div>
           </div>
 
-          {/* Document Category (Limited strictly to TOR / ราคากลาง / ฎีกา) */}
+          {/* Document Category */}
           <div>
             <label className="block text-xs font-bold text-[#134E4A] mb-1">
-              หมวดหมู่เอกสารในระบบจัดซื้อจัดจ้าง (TOR / ราคากลาง / ฎีกา) *
+              หมวดหมู่เอกสารในระบบจัดซื้อจัดจ้าง *
             </label>
             <select
               value={value.docCategory}
@@ -519,30 +519,54 @@ export function ProcurementSyncPanel({
             <p className="text-[11px] text-[#0F766E] mt-1">{selectedCategoryMeta.hint}</p>
           </div>
 
-          {/* Category-Specific Dynamic Subfields */}
+          {/* Category-Specific Dynamic Subfields (All Optional) */}
+          {value.docCategory === 'general_approval' && (
+            <div className="p-3 rounded-xl bg-white border border-[#CCFBF1] text-xs text-[#134E4A] flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#0F766E]" />
+              <div>
+                <span className="font-bold">ส่งเฉพาะไฟล์แนบไปยังหน้าข้อมูลทั่วไป: </span>
+                <span className="text-slate-600">
+                  ระบบจะส่งเฉพาะลิงก์ไฟล์แนบ (ไม่ส่งชื่อเรื่อง เลขหนังสือ หรือข้อความใดๆ)
+                  เพื่อไม่ให้กระทบข้อมูลรายการตั้งต้นโครงการในระบบจัดซื้อจัดจ้าง
+                </span>
+              </div>
+            </div>
+          )}
+
           {value.docCategory === 'tor_order' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-white border border-[#CCFBF1]">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 rounded-xl bg-white border border-[#CCFBF1]">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ผู้รับผิดชอบหลัก (ถ้ามี)
+                  เลขที่คำสั่ง
                 </label>
                 <input
                   type="text"
-                  value={value.fields.assigneeName || ''}
-                  onChange={(e) => updateFields({ assigneeName: e.target.value })}
-                  placeholder="ระบุชื่อประธาน/ผู้รับผิดชอบ"
+                  value={value.fields.orderNo || ''}
+                  onChange={(e) => updateFields({ orderNo: e.target.value })}
+                  placeholder="เว้นว่างหากยึดระบบปลายทาง"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  หมายเหตุเพิ่มเติม (ถ้ามี)
+                  วันที่คำสั่ง
+                </label>
+                <input
+                  type="date"
+                  value={value.fields.orderDate || ''}
+                  onChange={(e) => updateFields({ orderDate: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  ผู้รับผิดชอบ
                 </label>
                 <input
                   type="text"
-                  value={value.fields.notes || ''}
-                  onChange={(e) => updateFields({ notes: e.target.value })}
-                  placeholder="เช่น คำสั่งแต่งตั้ง กก. กำหนด TOR / ราคากลาง"
+                  value={value.fields.assigneeName || ''}
+                  onChange={(e) => updateFields({ assigneeName: e.target.value })}
+                  placeholder="เว้นว่างหากยึดระบบปลายทาง"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
                 />
               </div>
@@ -550,20 +574,8 @@ export function ProcurementSyncPanel({
           )}
 
           {(value.docCategory === 'tor_approval' || value.docCategory === 'ref_price') && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-white border border-[#CCFBF1]">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ผู้จัดทำ TOR (torAuthor)
-                </label>
-                <input
-                  type="text"
-                  value={value.fields.torAuthor || ''}
-                  onChange={(e) => updateFields({ torAuthor: e.target.value })}
-                  placeholder="เช่น นายช่างโยธา / ผู้จัดทำ TOR"
-                  className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
-                />
-              </div>
-              <div>
+            <div className="p-3 rounded-xl bg-white border border-[#CCFBF1]">
+              <div className="max-w-sm">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   วงเงินราคากลาง (บาท)
                 </label>
@@ -573,20 +585,8 @@ export function ProcurementSyncPanel({
                   min="0"
                   value={value.fields.refPrice || ''}
                   onChange={(e) => updateFields({ refPrice: e.target.value })}
-                  placeholder="0.00"
+                  placeholder="เว้นว่างหากยึดระบบปลายทาง"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm tabular-nums focus:outline-none focus:border-[#0F766E]"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  รายละเอียดเพิ่มเติม (ถ้ามี)
-                </label>
-                <input
-                  type="text"
-                  value={value.fields.details || ''}
-                  onChange={(e) => updateFields({ details: e.target.value })}
-                  placeholder="เช่น ขออนุมัติจัดทำ TOR และกำหนดราคากลางตามแบบ ปร.4/ปร.5"
-                  className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
                 />
               </div>
             </div>
@@ -595,19 +595,20 @@ export function ProcurementSyncPanel({
           {value.docCategory === 'disbursement' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-xl bg-white border border-[#CCFBF1]">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">งวดที่ *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">งวดที่</label>
                 <input
                   type="number"
                   min="1"
                   step="1"
-                  value={value.fields.installment || '1'}
+                  value={value.fields.installment || ''}
                   onChange={(e) => updateFields({ installment: e.target.value })}
+                  placeholder="เว้นว่างได้"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm tabular-nums focus:outline-none focus:border-[#0F766E]"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  จำนวนเงิน (บาท) *
+                  จำนวนเงิน (บาท)
                 </label>
                 <input
                   type="number"
@@ -615,34 +616,35 @@ export function ProcurementSyncPanel({
                   min="0"
                   value={value.fields.amount || ''}
                   onChange={(e) => updateFields({ amount: e.target.value })}
-                  placeholder="0.00"
+                  placeholder="เว้นว่างได้"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm tabular-nums focus:outline-none focus:border-[#0F766E]"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  สถานะเบิกจ่าย *
+                  สถานะเบิกจ่าย
                 </label>
                 <select
-                  value={value.fields.status || 'pending'}
+                  value={value.fields.status || ''}
                   onChange={(e) =>
-                    updateFields({ status: e.target.value as 'pending' | 'paid' })
+                    updateFields({ status: e.target.value as '' | 'pending' | 'paid' })
                   }
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] bg-white text-sm font-semibold focus:outline-none focus:border-[#0F766E]"
                 >
+                  <option value="">-- ไม่ระบุ (ยึดระบบปลายทาง) --</option>
                   <option value="pending">รอเบิกจ่าย (pending)</option>
                   <option value="paid">จ่ายแล้ว (paid)</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  เลขที่ฎีกา (ถ้ามี)
+                  เลขที่ฎีกา
                 </label>
                 <input
                   type="text"
                   value={value.fields.voucherNo || ''}
                   onChange={(e) => updateFields({ voucherNo: e.target.value })}
-                  placeholder="เช่น 001/2570"
+                  placeholder="เว้นว่างได้"
                   className="w-full px-3 py-2 rounded-xl border border-[#99F6E4] text-sm focus:outline-none focus:border-[#0F766E]"
                 />
               </div>

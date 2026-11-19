@@ -183,24 +183,32 @@ export function DocumentWizardModal({
   const createDefaultProcurementSync = (
     targetType: DocType,
     voucherAmt = '',
-    voucherNoStr = ''
+    voucherNoStr = '',
+    orderNoStr = '',
+    orderDateStr = ''
   ): ProcurementSyncSelection => {
     const defaultCategory: ProcurementDocCategory =
       targetType === 'vouchers'
         ? 'disbursement'
         : targetType === 'orders'
         ? 'tor_order'
-        : 'tor_approval';
+        : 'general_approval';
+    const cleanVoucherNo = voucherNoStr && voucherNoStr !== '-' ? voucherNoStr : '';
+    const cleanOrderNo =
+      targetType === 'orders' && orderNoStr && orderNoStr !== '-' ? orderNoStr : '';
+    const cleanOrderDate =
+      targetType === 'orders' && orderDateStr && orderDateStr !== '-' ? orderDateStr : '';
+
     return {
       enabled: false,
       fiscalYearFilter: 'all',
       procurement: null,
       docCategory: defaultCategory,
       fields: {
-        installment: '1',
-        status: 'pending',
-        ...(voucherAmt ? { amount: voucherAmt } : {}),
-        ...(voucherNoStr ? { voucherNo: voucherNoStr } : {}),
+        ...(cleanOrderNo ? { orderNo: cleanOrderNo } : {}),
+        ...(cleanOrderDate ? { orderDate: cleanOrderDate } : {}),
+        ...(voucherAmt && Number(voucherAmt) > 0 ? { amount: voucherAmt } : {}),
+        ...(cleanVoucherNo ? { voucherNo: cleanVoucherNo } : {}),
       },
     };
   };
@@ -264,7 +272,9 @@ export function DocumentWizardModal({
       const baseProcSync = createDefaultProcurementSync(
         t,
         editingDoc.voucherAmount ? String(editingDoc.voucherAmount) : '',
-        editingDoc.voucherNo || ''
+        editingDoc.voucherNo || '',
+        editingDoc.docNumber || '',
+        editingDoc.docDate || ''
       );
       if (existingProcRecord) {
         baseProcSync.docCategory =
@@ -411,6 +421,9 @@ export function DocumentWizardModal({
         setDocDate(getTodayISO());
       }
       setProjectSync(createDefaultProjectSync(nextType, voucherAmount));
+      setProcurementSync(
+        createDefaultProcurementSync(nextType, voucherAmount, voucherNo, docNumber, docDate)
+      );
     }
   };
 

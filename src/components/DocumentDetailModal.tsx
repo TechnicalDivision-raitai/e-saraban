@@ -124,7 +124,14 @@ function buildInitialProcurementSync(
       ? 'disbursement'
       : doc?.type === 'orders'
       ? 'tor_order'
-      : 'tor_approval';
+      : 'general_approval';
+  const cleanOrderNo =
+    doc?.type === 'orders' && doc.docNumber && doc.docNumber !== '-' ? String(doc.docNumber) : '';
+  const cleanOrderDate =
+    doc?.type === 'orders' && doc.docDate && doc.docDate !== '-' ? String(doc.docDate) : '';
+  const cleanVoucherNo =
+    doc?.type === 'vouchers' && doc.voucherNo && doc.voucherNo !== '-' ? String(doc.voucherNo) : '';
+
   return {
     enabled: false,
     fiscalYearFilter:
@@ -148,14 +155,12 @@ function buildInitialProcurementSync(
         ? 'tor_approval'
         : existingSync?.docCategory || defaultCategory,
     fields: {
-      installment: '1',
-      status: 'pending',
-      ...(doc?.type === 'vouchers' && doc.voucherAmount
+      ...(cleanOrderNo ? { orderNo: cleanOrderNo } : {}),
+      ...(cleanOrderDate ? { orderDate: cleanOrderDate } : {}),
+      ...(doc?.type === 'vouchers' && doc.voucherAmount && Number(doc.voucherAmount) > 0
         ? { amount: String(doc.voucherAmount) }
         : {}),
-      ...(doc?.type === 'vouchers' && doc.voucherNo
-        ? { voucherNo: String(doc.voucherNo) }
-        : {}),
+      ...(cleanVoucherNo ? { voucherNo: cleanVoucherNo } : {}),
     },
   };
 }

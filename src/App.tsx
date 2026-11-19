@@ -987,9 +987,12 @@ export default function App() {
             await syncSarabanDocToProcurement({
               docId: payload.editId,
               selection: payload.procurementSync,
-              bookNo: resolvedBookNo,
-              bookDate: resolvedBookDate,
-              subject: resolvedSubject,
+              bookNo:
+                payload.type === 'vouchers' ? payload.voucherNo || '' : payload.docNumber || '',
+              bookDate:
+                payload.type === 'vouchers' ? payload.voucherDate || '' : payload.docDate || '',
+              subject:
+                payload.type === 'vouchers' ? payload.voucherProject || '' : payload.subject || '',
               attachment: attachmentMeta,
             });
           } catch (syncErr) {
@@ -1111,9 +1114,12 @@ export default function App() {
             await syncSarabanDocToProcurement({
               docId: newId,
               selection: payload.procurementSync,
-              bookNo: resolvedBookNo,
-              bookDate: resolvedBookDate,
-              subject: resolvedSubject,
+              bookNo:
+                payload.type === 'vouchers' ? payload.voucherNo || '' : enforcedDocNumber || '',
+              bookDate:
+                payload.type === 'vouchers' ? payload.voucherDate || '' : payload.docDate || '',
+              subject:
+                payload.type === 'vouchers' ? payload.voucherProject || '' : payload.subject || '',
               attachment: attachmentMeta,
             });
           } catch (syncErr) {
@@ -1566,12 +1572,9 @@ export default function App() {
       await syncSarabanDocToProcurement({
         docId: doc.id,
         selection,
-        bookNo: doc.type === 'vouchers' ? doc.voucherNo || '-' : doc.docNumber || '-',
-        bookDate:
-          doc.type === 'vouchers'
-            ? doc.voucherDate || getTodayISO()
-            : doc.docDate || getTodayISO(),
-        subject: doc.type === 'vouchers' ? doc.voucherProject || '-' : doc.subject || '-',
+        bookNo: doc.type === 'vouchers' ? doc.voucherNo || '' : doc.docNumber || '',
+        bookDate: doc.type === 'vouchers' ? doc.voucherDate || '' : doc.docDate || '',
+        subject: doc.type === 'vouchers' ? doc.voucherProject || '' : doc.subject || '',
         attachment: attachmentMeta,
       });
     } finally {
