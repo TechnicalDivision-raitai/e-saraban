@@ -1,6 +1,8 @@
 import {
+  Check,
   CheckCircle2,
   Clock,
+  Copy,
   ExternalLink,
   FileUp,
   Loader2,
@@ -13,7 +15,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   ProcurementDocCategory,
   ProcurementSyncSelection,
@@ -196,6 +198,16 @@ export function DocumentDetailModal({
     buildInitialProcurementSync(doc, existingProcurementSync)
   );
   const [procurementPushError, setProcurementPushError] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!doc) return;
@@ -204,6 +216,11 @@ export function DocumentDetailModal({
     setDueDate(doc.dueDate && doc.dueDate !== '-' ? doc.dueDate : '');
     setSelectedFile(null);
     setRemoveExistingAttachment(false);
+    setCopiedLink(false);
+    if (copyTimerRef.current) {
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
     setProjectSync(buildInitialProjectSync(doc, existingProjectSync));
     setProjectPushError('');
     setProcurementSync(buildInitialProcurementSync(doc, existingProcurementSync));
@@ -249,6 +266,50 @@ export function DocumentDetailModal({
       selectedFile,
       removeExistingAttachment,
     });
+  };
+
+  const handleCopyAttachmentLink = async () => {
+    const url = String(doc.fileData || '').trim();
+    if (!url) return;
+
+    let copied = false;
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      setCopiedLink(true);
+      if (copyTimerRef.current) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedLink(false);
+        copyTimerRef.current = null;
+      }, 2200);
+    }
   };
 
   const handlePushProjectSync = async () => {
@@ -575,12 +636,12 @@ export function DocumentDetailModal({
 
               <div className="space-y-2.5">
                 {hasExistingAttachment && !removeExistingAttachment && !selectedFile && (
-                  <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E5E2F0]">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E5E2F0]">
                     <a
                       href={doc.fileData}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-semibold text-[#574F7D] hover:underline flex items-center gap-2 min-w-0"
+                      className="text-xs font-semibold text-[#574F7D] hover:underline flex items-center gap-2 min-w-0 flex-1"
                     >
                       <Paperclip className="w-4 h-4 shrink-0" />
                       <span className="truncate">
@@ -588,11 +649,33 @@ export function DocumentDetailModal({
                       </span>
                     </a>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleCopyAttachmentLink}
+                        title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
+                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
+                          copiedLink
+                            ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
+                            : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
+                        }`}
+                      >
+                        {copiedLink ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>คัดลอกแล้ว</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>คัดลอกลิงก์</span>
+                          </>
+                        )}
+                      </button>
                       <a
                         href={doc.fileData}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1.5 rounded-lg bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>เปิดดู</span>
@@ -600,7 +683,7 @@ export function DocumentDetailModal({
                       <button
                         type="button"
                         onClick={() => setRemoveExistingAttachment(true)}
-                        className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>นำออก</span>
@@ -661,15 +744,39 @@ export function DocumentDetailModal({
                 </span>
               </div>
               {hasExistingAttachment && (
-                <a
-                  href={doc.fileData}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3.5 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>เปิดดูไฟล์</span>
-                </a>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyAttachmentLink}
+                    title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
+                    className={`px-3 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                      copiedLink
+                        ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
+                        : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
+                    }`}
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>คัดลอกแล้ว</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>คัดลอกลิงก์</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={doc.fileData}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>เปิดดูไฟล์</span>
+                  </a>
+                </div>
               )}
             </div>
           )}
