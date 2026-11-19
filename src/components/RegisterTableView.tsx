@@ -650,7 +650,7 @@ export function RegisterTableView({
                 <tr>
                   {renderSortHeader('ปีงบประมาณ', 'yearStr')}
                   {renderSortHeader('เลขที่บันทึก / วันที่', 'docNumber')}
-                  {renderSortHeader('งาน / เรียน / เรื่อง', 'subject')}
+                  {renderSortHeader('งาน / เรื่อง / เรียน', 'subject')}
                   {renderSortHeader('สถานะดำเนินการ', 'status', 'center')}
                   <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
                     ไฟล์แนบ
@@ -978,9 +978,9 @@ export function RegisterTableView({
                             งาน: {d.memoWork || '-'}
                           </span>
                           <div className="font-semibold text-slate-900">
-                            เรียน: {d.sender || '-'}
+                            เรื่อง: {d.subject || '-'}
                           </div>
-                          <div className="text-xs text-slate-600">เรื่อง: {d.subject || '-'}</div>
+                          <div className="text-xs text-slate-600">เรียน: {d.sender || '-'}</div>
                           {renderProjectSyncTag(d)}
                         </td>
                         <td className="p-3.5 text-center">
