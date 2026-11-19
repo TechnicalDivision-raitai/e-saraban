@@ -132,6 +132,7 @@ export function DocumentWizardModal({
   const [urgency, setUrgency] = useState<string>('ปกติ');
   const [docNumber, setDocNumber] = useState('');
   const [docDate, setDocDate] = useState('');
+  const [isDocDateManual, setIsDocDateManual] = useState(false);
   const [subject, setSubject] = useState('');
   const [status, setStatus] = useState<string>('ลงรับแล้ว');
   const [assignee, setAssignee] = useState('นิศาชล คงดี');
@@ -225,6 +226,7 @@ export function DocumentWizardModal({
       setUrgency(editingDoc.urgency || 'ปกติ');
       setDocNumber(editingDoc.docNumber || '');
       setDocDate(editingDoc.docDate || '');
+      setIsDocDateManual(Boolean(editingDoc.docDate));
       setSubject(editingDoc.subject || '');
       setStatus(editingDoc.status || 'ลงรับแล้ว');
       setAssignee(editingDoc.assignee || 'นิศาชล คงดี');
@@ -286,15 +288,17 @@ export function DocumentWizardModal({
       }
       setProcurementSync(baseProcSync);
     } else {
+      const todayISO = getTodayISO();
       setStep(1);
       setDocType('incoming');
       setYearStr(getCurrentYearForType('incoming'));
       setCentralRegNo('');
-      setReceiveDate('');
+      setReceiveDate(todayISO);
       setSender('');
       setUrgency('ปกติ');
       setDocNumber('');
-      setDocDate('');
+      setDocDate(todayISO);
+      setIsDocDateManual(false);
       setSubject('');
       setStatus('ลงรับแล้ว');
       setAssignee('นิศาชล คงดี');
@@ -399,7 +403,11 @@ export function DocumentWizardModal({
       if (DOC_TYPE_META[nextType].yearKind !== 'none') {
         setYearStr(getCurrentYearForType(nextType));
       }
-      if (nextType === 'memos' && !docDate) {
+      if (nextType === 'incoming') {
+        const nextReceive = receiveDate || getTodayISO();
+        if (!receiveDate) setReceiveDate(nextReceive);
+        if (!isDocDateManual) setDocDate(nextReceive);
+      } else if (nextType === 'memos' && !docDate) {
         setDocDate(getTodayISO());
       }
       setProjectSync(createDefaultProjectSync(nextType, voucherAmount));
@@ -751,8 +759,11 @@ export function DocumentWizardModal({
                           type="date"
                           value={receiveDate}
                           onChange={(e) => {
-                            setReceiveDate(e.target.value);
-                            if (!docDate) setDocDate(e.target.value);
+                            const nextReceiveDate = e.target.value;
+                            setReceiveDate(nextReceiveDate);
+                            if ((!editingDoc && !isDocDateManual) || !docDate) {
+                              setDocDate(nextReceiveDate);
+                            }
                           }}
                           className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
@@ -810,7 +821,11 @@ export function DocumentWizardModal({
                         <input
                           type="date"
                           value={docDate}
-                          onChange={(e) => setDocDate(e.target.value)}
+                          onChange={(e) => {
+                            const nextDocDate = e.target.value;
+                            setDocDate(nextDocDate);
+                            setIsDocDateManual(Boolean(nextDocDate) && nextDocDate !== receiveDate);
+                          }}
                           className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                         />
                       </div>
