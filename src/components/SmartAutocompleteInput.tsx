@@ -8,6 +8,7 @@ interface SmartAutocompleteInputProps {
   placeholder?: string;
   className?: string;
   ariaLabel?: string;
+  matchMode?: 'includes' | 'startsWith';
 }
 
 export function SmartAutocompleteInput({
@@ -17,11 +18,29 @@ export function SmartAutocompleteInput({
   placeholder,
   className = '',
   ariaLabel,
+  matchMode = 'includes',
 }: SmartAutocompleteInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
+  const prefixQuery = useMemo(() => {
+    if (matchMode !== 'startsWith') return '';
+    return value.trimStart().replace(/\s+/g, ' ');
+  }, [value, matchMode]);
+
   const filtered = useMemo(() => {
+    if (matchMode === 'startsWith') {
+      const query = prefixQuery.toLocaleLowerCase('th-TH');
+      if (!query) return [];
+      return suggestions
+        .map((item) => normalizeWhitespace(item))
+        .filter((item) => {
+          const lower = item.toLocaleLowerCase('th-TH');
+          return lower.startsWith(query) && lower !== query;
+        })
+        .slice(0, 12);
+    }
+
     const query = normalizeWhitespace(value).toLocaleLowerCase('th-TH');
     if (!query) return [];
     return suggestions
@@ -30,7 +49,7 @@ export function SmartAutocompleteInput({
         return lower.includes(query) && lower !== query;
       })
       .slice(0, 12);
-  }, [value, suggestions]);
+  }, [value, suggestions, matchMode, prefixQuery]);
 
   const showDropdown = isOpen && filtered.length > 0;
 
@@ -52,7 +71,11 @@ export function SmartAutocompleteInput({
           const next = e.target.value;
           onChange(next);
           setActiveIndex(-1);
-          setIsOpen(normalizeWhitespace(next).length > 0);
+          setIsOpen(
+            matchMode === 'startsWith'
+              ? next.trimStart().length > 0
+              : normalizeWhitespace(next).length > 0
+          );
         }}
         onBlur={() => {
           setIsOpen(false);
@@ -98,7 +121,16 @@ export function SmartAutocompleteInput({
                     : 'text-slate-800 hover:bg-[#F5F4F9] hover:text-[#242038]'
                 }`}
               >
-                {item}
+                {matchMode === 'startsWith' && prefixQuery.length > 0 ? (
+                  <>
+                    <span className="font-bold text-[#574F7D]">
+                      {item.slice(0, prefixQuery.length)}
+                    </span>
+                    <span>{item.slice(prefixQuery.length)}</span>
+                  </>
+                ) : (
+                  item
+                )}
               </button>
             </li>
           ))}

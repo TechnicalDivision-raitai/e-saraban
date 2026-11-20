@@ -339,6 +339,20 @@ export function DocumentWizardModal({
   }, [documents, currentYearForDocType, yearStr]);
 
   const suggestions = useMemo(() => {
+    const subjectDocTypes = new Set<string>(['incoming', 'outgoing', 'orders', 'memos']);
+    const buildSubjectSuggestions = (targetType: DocType) => {
+      const sameType = getUniqueNormalizedSuggestions(
+        documents.filter((d) => d.type === targetType).map((d) => d.subject)
+      );
+      const sameKeys = new Set(sameType.map((s) => s.toLocaleLowerCase('th-TH')));
+      const otherTypes = getUniqueNormalizedSuggestions(
+        documents
+          .filter((d) => subjectDocTypes.has(d.type) && d.type !== targetType)
+          .map((d) => d.subject)
+      ).filter((s) => !sameKeys.has(s.toLocaleLowerCase('th-TH')));
+      return [...sameType, ...otherTypes];
+    };
+
     return {
       incomingSenders: getUniqueNormalizedSuggestions(
         documents.filter((d) => d.type === 'incoming').map((d) => d.sender)
@@ -346,6 +360,10 @@ export function DocumentWizardModal({
       outgoingRecipients: getUniqueNormalizedSuggestions(
         documents.filter((d) => d.type === 'outgoing').map((d) => d.sender)
       ),
+      incomingSubjects: buildSubjectSuggestions('incoming'),
+      outgoingSubjects: buildSubjectSuggestions('outgoing'),
+      orderSubjects: buildSubjectSuggestions('orders'),
+      memoSubjects: buildSubjectSuggestions('memos'),
       memoWorks: getUniqueNormalizedSuggestions([
         'งานธุรการ',
         'งานโยธา',
@@ -848,10 +866,11 @@ export function DocumentWizardModal({
                       <label className="block text-sm font-semibold text-slate-800 mb-1">
                         เรื่อง *
                       </label>
-                      <input
-                        type="text"
+                      <SmartAutocompleteInput
                         value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
+                        onChange={setSubject}
+                        suggestions={suggestions.incomingSubjects}
+                        matchMode="startsWith"
                         placeholder="ระบุเรื่องหนังสือ"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
@@ -890,10 +909,11 @@ export function DocumentWizardModal({
                       <label className="block text-sm font-semibold text-slate-800 mb-1">
                         เรื่อง *
                       </label>
-                      <input
-                        type="text"
+                      <SmartAutocompleteInput
                         value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
+                        onChange={setSubject}
+                        suggestions={suggestions.outgoingSubjects}
+                        matchMode="startsWith"
                         placeholder="ระบุเรื่องหนังสือส่ง"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
@@ -944,10 +964,11 @@ export function DocumentWizardModal({
                       <label className="block text-sm font-semibold text-slate-800 mb-1">
                         เรื่องคำสั่ง *
                       </label>
-                      <input
-                        type="text"
+                      <SmartAutocompleteInput
                         value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
+                        onChange={setSubject}
+                        suggestions={suggestions.orderSubjects}
+                        matchMode="startsWith"
                         placeholder="ระบุเรื่องคำสั่ง"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
@@ -1013,10 +1034,11 @@ export function DocumentWizardModal({
                       <label className="block text-sm font-semibold text-slate-800 mb-1">
                         เรื่อง *
                       </label>
-                      <input
-                        type="text"
+                      <SmartAutocompleteInput
                         value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
+                        onChange={setSubject}
+                        suggestions={suggestions.memoSubjects}
+                        matchMode="startsWith"
                         placeholder="ระบุเรื่องบันทึกข้อความ"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
                       />
