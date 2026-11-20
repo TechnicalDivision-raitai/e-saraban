@@ -1,7 +1,9 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
+  CheckCircle2,
   FileUp,
   Loader2,
   Paperclip,
@@ -17,7 +19,10 @@ import {
   URGENCY_LEVELS,
   WORKFLOW_STATUSES,
 } from '../types/saraban';
+import type { DocNumberDuplicateCheck } from '../utils/sarabanUtils';
 import {
+  findDuplicateDocumentsByNumber,
+  formatThaiDate,
   getAvailableYears,
   getCurrentYearForType,
   getNextMemoDocNumber,
@@ -422,7 +427,184 @@ export function DocumentWizardModal({
     }
   }, [docType, autoMemoDocNumber, docNumber]);
 
+  const centralRegNoCheck = useMemo<DocNumberDuplicateCheck>(() => {
+    if (docType !== 'incoming') {
+      return { hasInput: false, sameYearMatches: [], otherYearMatches: [] };
+    }
+    return findDuplicateDocumentsByNumber({
+      documents,
+      type: 'incoming',
+      field: 'centralRegNo',
+      value: centralRegNo,
+      yearStr,
+      excludeId: editingDoc?.id,
+    });
+  }, [docType, documents, centralRegNo, yearStr, editingDoc?.id]);
+
+  const primaryDocNumberCheck = useMemo<DocNumberDuplicateCheck>(() => {
+    if (docType === 'forms') {
+      return findDuplicateDocumentsByNumber({
+        documents,
+        type: 'forms',
+        field: 'formCode',
+        value: formCode,
+        excludeId: editingDoc?.id,
+      });
+    }
+    if (docType === 'vouchers') {
+      return findDuplicateDocumentsByNumber({
+        documents,
+        type: 'vouchers',
+        field: 'voucherNo',
+        value: voucherNo,
+        yearStr,
+        excludeId: editingDoc?.id,
+      });
+    }
+    const currentValue = docType === 'memos' ? autoMemoDocNumber : docNumber;
+    return findDuplicateDocumentsByNumber({
+      documents,
+      type: docType,
+      field: 'docNumber',
+      value: currentValue,
+      yearStr,
+      excludeId: editingDoc?.id,
+      includeOtherYears: docType === 'incoming',
+    });
+  }, [
+    docType,
+    documents,
+    docNumber,
+    autoMemoDocNumber,
+    formCode,
+    voucherNo,
+    yearStr,
+    editingDoc?.id,
+  ]);
+
   if (!isOpen) return null;
+
+  const getNumberInputStateClass = (check: DocNumberDuplicateCheck, isReadOnly = false) => {
+    if (check.sameYearMatches.length > 0) {
+      return isReadOnly
+        ? 'border-rose-400 bg-rose-50/70 text-rose-900'
+        : 'border-rose-400 focus:border-rose-500 bg-rose-50/40';
+    }
+    if (check.otherYearMatches.length > 0) {
+      return 'border-amber-400 focus:border-amber-500 bg-amber-50/30';
+    }
+    return isReadOnly
+      ? 'border-[#C9C4DC] bg-[#F5F4FA] text-[#3F3668]'
+      : 'border-[#C9C4DC] focus:border-[#6B6293]';
+  };
+
+  const formatDuplicateMatchSummary = (match: SarabanDoc): string => {
+    if (match.type === 'incoming') {
+      const regText = match.regNo && match.regNo !== '-' ? `เลขรับ ${match.regNo}/${match.yearStr}` : '';
+      const dateText = match.docDate ? `ลงวันที่ ${formatThaiDate(match.docDate)}` : '';
+      const subjectText = match.subject ? `เรื่อง: ${match.subject}` : '';
+      return [regText, subjectText, dateText].filter(Boolean).join(' · ');
+    }
+    if (match.type === 'outgoing') {
+      const subjectText = match.subject ? `เรื่อง: ${match.subject}` : '';
+      const recipientText = match.sender ? `ผู้รับ: ${match.sender}` : '';
+      const dateText = match.docDate ? `ลงวันที่ ${formatThaiDate(match.docDate)}` : '';
+      return [subjectText, recipientText, dateText].filter(Boolean).join(' · ');
+    }
+    if (match.type === 'orders') {
+      const subjectText = match.subject ? `เรื่อง: ${match.subject}` : '';
+      const dateText = match.docDate ? `ลงวันที่ ${formatThaiDate(match.docDate)}` : '';
+      return [subjectText, dateText].filter(Boolean).join(' · ');
+    }
+    if (match.type === 'memos') {
+      const workText = match.memoWork ? `${match.memoWork}` : '';
+      const subjectText = match.subject ? `เรื่อง: ${match.subject}` : '';
+      const dateText = match.docDate ? `ลงวันที่ ${formatThaiDate(match.docDate)}` : '';
+      return [workText, subjectText, dateText].filter(Boolean).join(' · ');
+    }
+    if (match.type === 'forms') {
+      const workText = match.memoWork ? `${match.memoWork}` : '';
+      const nameText = match.formName ? `แบบฟอร์ม: ${match.formName}` : '';
+      return [workText, nameText].filter(Boolean).join(' · ');
+    }
+    const projectText = match.voucherProject ? `โครงการ: ${match.voucherProject}` : '';
+    const payeeText = match.voucherPayee ? `ผู้รับเงิน: ${match.voucherPayee}` : '';
+    const dateText = match.voucherDate ? `วันที่ ${formatThaiDate(match.voucherDate)}` : '';
+    return [projectText, payeeText, dateText].filter(Boolean).join(' · ');
+  };
+
+  const renderDuplicateFeedback = (check: DocNumberDuplicateCheck, fieldLabel: string) => {
+    if (!check.hasInput) return null;
+
+    const yearScopeLabel =
+      typeMeta.yearKind === 'fiscal'
+        ? `ปีงบประมาณ ${yearStr}`
+        : typeMeta.yearKind === 'calendar'
+          ? `ปี ${yearStr}`
+          : 'ทะเบียนแบบฟอร์ม';
+
+    if (check.sameYearMatches.length > 0) {
+      const visibleMatches = check.sameYearMatches.slice(0, 3);
+      const extraCount = check.sameYearMatches.length - visibleMatches.length;
+      return (
+        <div
+          role="alert"
+          className="mt-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 space-y-1"
+        >
+          <div className="flex items-center gap-1.5 font-bold text-rose-700">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              พบ{fieldLabel}ซ้ำใน{yearScopeLabel} ({check.sameYearMatches.length} รายการ)
+            </span>
+          </div>
+          <ul className="space-y-0.5 pl-5 list-disc text-[11px] text-rose-800">
+            {visibleMatches.map((match) => (
+              <li key={String(match.id)} className="leading-snug break-words">
+                {formatDuplicateMatchSummary(match)}
+              </li>
+            ))}
+          </ul>
+          {extraCount > 0 && (
+            <div className="pl-5 text-[11px] font-medium text-rose-700">
+              และอีก {extraCount} รายการ
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (check.otherYearMatches.length > 0) {
+      const years = [...new Set(check.otherYearMatches.map((m) => m.yearStr).filter(Boolean))].join(', ');
+      const visibleMatches = check.otherYearMatches.slice(0, 2);
+      return (
+        <div
+          role="status"
+          className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1"
+        >
+          <div className="flex items-center gap-1.5 font-bold text-amber-800">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              พบ{fieldLabel}นี้ในปีอื่น ({years}) — ตรวจสอบหากเป็นฉบับเดียวกัน
+            </span>
+          </div>
+          <ul className="space-y-0.5 pl-5 list-disc text-[11px] text-amber-900/90">
+            {visibleMatches.map((match) => (
+              <li key={String(match.id)} className="leading-snug break-words">
+                {formatDuplicateMatchSummary(match)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+        <span>ไม่พบ{fieldLabel}ซ้ำใน{yearScopeLabel}</span>
+      </div>
+    );
+  };
 
   const handleSelectType = (nextType: DocType) => {
     setDocType(nextType);
@@ -779,8 +961,9 @@ export function DocumentWizardModal({
                           value={centralRegNo}
                           onChange={(e) => setCentralRegNo(e.target.value)}
                           placeholder="เช่น รับกลาง-102/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(centralRegNoCheck)}`}
                         />
+                        {renderDuplicateFeedback(centralRegNoCheck, 'เลขที่รับส่วนกลาง')}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
@@ -842,8 +1025,9 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น อบ 0023.23/ว 36"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่หนังสือ')}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
@@ -890,8 +1074,9 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น อบ 0023.23/12"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่หนังสือส่ง')}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
@@ -945,8 +1130,9 @@ export function DocumentWizardModal({
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
                           placeholder="เช่น ที่ 5/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่คำสั่ง')}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">
@@ -1001,8 +1187,9 @@ export function DocumentWizardModal({
                           readOnly
                           title="ระบบรันเลขที่บันทึกข้อความให้อัตโนมัติตามวันที่ลงหนังสือ"
                           placeholder="อบ 87303/MM-DD/01"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] bg-[#F5F4FA] text-[#3F3668] font-bold tabular-nums text-sm cursor-not-allowed focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border font-bold tabular-nums text-sm cursor-not-allowed focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck, true)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่บันทึก')}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1070,8 +1257,9 @@ export function DocumentWizardModal({
                           value={formCode}
                           onChange={(e) => setFormCode(e.target.value)}
                           placeholder="เช่น แบบ ปร.1"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่แบบ')}
                       </div>
                     </div>
                     <div>
@@ -1127,8 +1315,9 @@ export function DocumentWizardModal({
                           value={voucherNo}
                           onChange={(e) => setVoucherNo(e.target.value)}
                           placeholder="เช่น ฎีกาที่ 12/2569"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] text-sm focus:outline-none"
+                          className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none transition-colors ${getNumberInputStateClass(primaryDocNumberCheck)}`}
                         />
+                        {renderDuplicateFeedback(primaryDocNumberCheck, 'เลขที่ผู้เบิก')}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-1">

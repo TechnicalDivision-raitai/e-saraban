@@ -551,6 +551,78 @@ export function getUniqueNormalizedSuggestions(values: (string | undefined | nul
   return [...seen.values()].sort((a, b) => a.localeCompare(b, 'th'));
 }
 
+export function normalizeDocNumberKey(raw?: string | null): string {
+  const cleaned = String(raw || '')
+    .replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)))
+    .replace(/\s+/g, '')
+    .toLocaleLowerCase('th-TH');
+  if (!cleaned || cleaned === '-') return '';
+  return cleaned;
+}
+
+export interface DocNumberDuplicateCheck {
+  hasInput: boolean;
+  sameYearMatches: SarabanDoc[];
+  otherYearMatches: SarabanDoc[];
+}
+
+export function findDuplicateDocumentsByNumber(options: {
+  documents: SarabanDoc[];
+  type: DocType;
+  field: 'docNumber' | 'centralRegNo' | 'formCode' | 'voucherNo';
+  value: string;
+  yearStr?: string;
+  excludeId?: string | number | null;
+  includeOtherYears?: boolean;
+}): DocNumberDuplicateCheck {
+  const targetKey = normalizeDocNumberKey(options.value);
+  if (!targetKey) {
+    return { hasInput: false, sameYearMatches: [], otherYearMatches: [] };
+  }
+
+  const meta = DOC_TYPE_META[options.type];
+  const checkYear = meta?.yearKind !== 'none';
+  const targetYear = String(options.yearStr || '').trim();
+
+  const sameYearMatches: SarabanDoc[] = [];
+  const otherYearMatches: SarabanDoc[] = [];
+
+  for (const doc of options.documents) {
+    if (doc.type !== options.type) continue;
+    if (
+      options.excludeId !== null &&
+      options.excludeId !== undefined &&
+      String(doc.id) === String(options.excludeId)
+    ) {
+      continue;
+    }
+
+    const candidateRaw =
+      options.field === 'centralRegNo'
+        ? doc.centralRegNo
+        : options.field === 'formCode'
+          ? doc.formCode
+          : options.field === 'voucherNo'
+            ? doc.voucherNo
+            : doc.docNumber;
+
+    const candidateKey = normalizeDocNumberKey(candidateRaw);
+    if (!candidateKey || candidateKey !== targetKey) continue;
+
+    if (!checkYear || !targetYear || !doc.yearStr || String(doc.yearStr).trim() === targetYear) {
+      sameYearMatches.push(doc);
+    } else if (options.includeOtherYears && targetKey.length >= 4) {
+      otherYearMatches.push(doc);
+    }
+  }
+
+  return {
+    hasInput: true,
+    sameYearMatches,
+    otherYearMatches,
+  };
+}
+
 export function getOrderedStatuses(docs: SarabanDoc[]): string[] {
   const present = [...new Set(docs.map((d) => String(d.status || '').trim()).filter(Boolean))];
   return [
