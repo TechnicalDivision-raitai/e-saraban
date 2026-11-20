@@ -807,12 +807,25 @@ export async function parseExcelToImportRecords(
   const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+  const rows = rawRows.filter((row) =>
+    Object.values(row).some((val) => String(val ?? '').trim() !== '')
+  );
   if (!rows || rows.length === 0) {
     throw new Error('ไม่พบข้อมูลภายในไฟล์ Excel ที่เลือก');
   }
 
   let nextIncomingRegNo = getNextRegNoForYear(existingDocs, 'incoming', selectedYearStr);
+
+  const readText = (row: Record<string, unknown>, keys: string[], fallback: string): string => {
+    for (const key of keys) {
+      const value = row[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return fallback;
+  };
 
   return rows.map((row, idx) => {
     const newId = Date.now() + idx;
@@ -820,8 +833,8 @@ export async function parseExcelToImportRecords(
       id: newId,
       type: importType,
       year_str: selectedYearStr,
-      status: 'ลงรับแล้ว',
-      assignee: 'นิศาชล คงดี',
+      status: readText(row, ['สถานะ', 'status'], 'ลงรับแล้ว'),
+      assignee: readText(row, ['ผู้รับผิดชอบ', 'assignee'], 'นิศาชล คงดี'),
       due_date: '',
       ack_status: 'รอรับทราบ',
       ack_time: '-',
@@ -831,47 +844,263 @@ export async function parseExcelToImportRecords(
 
     if (importType === 'incoming') {
       rec.reg_no = nextIncomingRegNo++;
-      rec.central_reg_no = String(row['เลขรับส่วนกลาง'] || row['central_reg_no'] || '-');
+      rec.central_reg_no = readText(row, ['เลขรับส่วนกลาง', 'เลขที่รับส่วนกลาง', 'central_reg_no'], '-');
       rec.receive_date = excelDateToISOString(row['วันที่ลงรับ'] || row['receive_date']);
-      rec.doc_number = String(row['เลขที่หนังสือ'] || row['doc_number'] || '-');
+      rec.doc_number = readText(row, ['เลขที่หนังสือ', 'doc_number'], '-');
       rec.doc_date = excelDateToISOString(row['ลงวันที่'] || row['doc_date']);
-      rec.subject = String(row['เรื่อง'] || row['subject'] || 'ไม่มีชื่อเรื่อง');
-      rec.sender = String(row['ผู้ส่ง'] || row['sender'] || '-');
-      rec.urgency = String(row['ความเร่งด่วน'] || row['urgency'] || 'ปกติ');
+      rec.subject = readText(row, ['เรื่อง', 'subject'], 'ไม่มีชื่อเรื่อง');
+      rec.sender = readText(row, ['ผู้ส่ง', 'ผู้ส่ง / หน่วยงานต้นสังกัด', 'sender'], '-');
+      rec.urgency = readText(row, ['ความเร่งด่วน', 'urgency'], 'ปกติ');
     } else if (importType === 'outgoing') {
       rec.reg_no = '-';
-      rec.doc_number = String(row['เลขที่หนังสือส่ง'] || row['doc_number'] || '-');
+      rec.doc_number = readText(row, ['เลขที่หนังสือส่ง', 'เลขที่หนังสือ', 'doc_number'], '-');
       rec.doc_date = excelDateToISOString(row['ลงวันที่'] || row['doc_date']);
-      rec.subject = String(row['เรื่อง'] || row['subject'] || 'ไม่มีชื่อเรื่อง');
-      rec.sender = String(row['ผู้รับ'] || row['sender'] || '-');
-      rec.status = String(row['สถานะ'] || row['status'] || 'ออกเอกสาร');
+      rec.subject = readText(row, ['เรื่อง', 'subject'], 'ไม่มีชื่อเรื่อง');
+      rec.sender = readText(row, ['ผู้รับ', 'ผู้รับ / หน่วยงานรับ', 'sender'], '-');
+      rec.status = readText(row, ['สถานะ', 'status'], 'ออกเอกสาร');
     } else if (importType === 'orders') {
       rec.reg_no = '-';
-      rec.doc_number = String(row['เลขที่คำสั่ง'] || row['doc_number'] || '-');
+      rec.doc_number = readText(row, ['เลขที่คำสั่ง', 'doc_number'], '-');
       rec.doc_date = excelDateToISOString(row['ลงวันที่'] || row['doc_date']);
-      rec.subject = String(row['เรื่อง'] || row['subject'] || 'ไม่มีชื่อเรื่อง');
-      rec.status = String(row['สถานะ'] || row['status'] || 'ออกเอกสาร');
+      rec.subject = readText(row, ['เรื่อง', 'เรื่องคำสั่ง', 'subject'], 'ไม่มีชื่อเรื่อง');
+      rec.status = readText(row, ['สถานะ', 'status'], 'ออกเอกสาร');
     } else if (importType === 'memos') {
       rec.reg_no = '-';
-      rec.memo_work = String(row['งาน'] || row['memo_work'] || 'งานสารบรรณ');
-      rec.doc_number = String(row['เลขที่บันทึก'] || row['doc_number'] || '-');
+      rec.memo_work = readText(row, ['งาน', 'memo_work'], 'งานสารบรรณ');
+      rec.doc_number = readText(row, ['เลขที่บันทึก', 'doc_number'], '-');
       rec.doc_date = excelDateToISOString(row['ลงวันที่'] || row['doc_date']);
-      rec.sender = String(row['เรียน'] || row['sender'] || '-');
-      rec.subject = String(row['เรื่อง'] || row['subject'] || 'ไม่มีชื่อเรื่อง');
-      rec.status = String(row['สถานะ'] || row['status'] || 'ออกเอกสาร');
+      rec.sender = readText(row, ['เรียน', 'sender'], '-');
+      rec.subject = readText(row, ['เรื่อง', 'subject'], 'ไม่มีชื่อเรื่อง');
+      rec.status = readText(row, ['สถานะ', 'status'], 'ออกเอกสาร');
     } else if (importType === 'vouchers') {
       rec.reg_no = '-';
       rec.voucher_date = excelDateToISOString(row['วันที่จัดทำ'] || row['voucher_date']);
-      rec.voucher_maker = String(row['ผู้จัดทำ'] || row['voucher_maker'] || '-');
-      rec.voucher_no = String(row['เลขที่ผู้เบิก'] || row['voucher_no'] || '-');
-      rec.voucher_category = String(row['ประเภทฎีกา'] || row['voucher_category'] || '-');
-      rec.voucher_payee = String(row['ผู้รับเงิน'] || row['voucher_payee'] || '-');
-      rec.voucher_amount = parseFloat(String(row['จำนวนเงิน'] || row['voucher_amount'] || 0)) || 0;
-      rec.voucher_project = String(row['ชื่อโครงการ'] || row['voucher_project'] || '-');
+      rec.voucher_maker = readText(row, ['ผู้จัดทำ', 'voucher_maker'], '-');
+      rec.voucher_no = readText(row, ['เลขที่ผู้เบิก', 'voucher_no'], '-');
+      rec.voucher_category = readText(row, ['ประเภทฎีกา', 'voucher_category'], '-');
+      rec.voucher_payee = readText(row, ['ผู้รับเงิน', 'voucher_payee'], '-');
+      const rawAmount = String(row['จำนวนเงิน'] ?? row['voucher_amount'] ?? '0').replace(/,/g, '').trim();
+      rec.voucher_amount = parseFloat(rawAmount) || 0;
+      rec.voucher_project = readText(row, ['ชื่อโครงการ', 'voucher_project'], '-');
     }
 
     return rec;
   });
+}
+
+interface ExcelTemplateSpec {
+  fileLabel: string;
+  colWidths: number[];
+  sampleRows: Record<string, string | number>[];
+  guideRows: { คอลัมน์: string; ความจำเป็น: string; คำอธิบายและรูปแบบที่รองรับ: string }[];
+}
+
+export function downloadExcelImportTemplate(type: DocType): boolean {
+  const currentYear = getCurrentYearForType(type);
+  const currentADYear = Number(currentYear) - 543;
+  const isoSample1 = `${currentADYear}-10-05`;
+  const isoSample2 = `${currentADYear}-10-07`;
+  const isoSample3 = `${currentADYear}-10-08`;
+
+  const templates: Partial<Record<DocType, ExcelTemplateSpec>> = {
+    incoming: {
+      fileLabel: 'หนังสือรับ',
+      colWidths: [20, 14, 22, 14, 44, 28, 14, 16, 18],
+      sampleRows: [
+        {
+          เลขรับส่วนกลาง: `รับกลาง-101/${currentYear}`,
+          วันที่ลงรับ: isoSample1,
+          เลขที่หนังสือ: 'อบ 0023.23/ว 125',
+          ลงวันที่: isoSample1,
+          เรื่อง: 'ขอความอนุเคราะห์ตรวจสอบสภาพถนน คสล. หมู่ที่ 3',
+          ผู้ส่ง: 'อำเภอพิบูลมังสาหาร',
+          ความเร่งด่วน: 'ปกติ',
+          สถานะ: 'ลงรับแล้ว',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+        {
+          เลขรับส่วนกลาง: `รับกลาง-102/${currentYear}`,
+          วันที่ลงรับ: isoSample2,
+          เลขที่หนังสือ: 'มท 0808.2/ว 450',
+          ลงวันที่: isoSample1,
+          เรื่อง: 'แจ้งแนวทางปฏิบัติการจัดซื้อจัดจ้างประจำปีงบประมาณ',
+          ผู้ส่ง: 'กรมส่งเสริมการปกครองท้องถิ่น',
+          ความเร่งด่วน: 'ด่วน',
+          สถานะ: 'ลงรับแล้ว',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+      ],
+      guideRows: [
+        { คอลัมน์: 'เลขรับส่วนกลาง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เลขที่รับจากสำนักปลัด/ส่วนกลาง (เลขรับกองช่างระบบจะรันต่อให้อัตโนมัติ)' },
+        { คอลัมน์: 'วันที่ลงรับ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'รองรับ YYYY-MM-DD (เช่น 2026-10-05), DD/MM/YYYY, วันที่ไทย หรือ Date ใน Excel' },
+        { คอลัมน์: 'เลขที่หนังสือ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เลขที่หนังสือต้นทาง เช่น อบ 0023.23/ว 125' },
+        { คอลัมน์: 'ลงวันที่', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'วันที่ลงในหนังสือต้นทาง รูปแบบเดียวกับวันที่ลงรับ' },
+        { คอลัมน์: 'เรื่อง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อเรื่องหนังสือ' },
+        { คอลัมน์: 'ผู้ส่ง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อหน่วยงานหรือบุคคลต้นสังกัด' },
+        { คอลัมน์: 'ความเร่งด่วน', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ปกติ / ด่วน / ด่วนมาก / ด่วนที่สุด (ค่าเริ่มต้น: ปกติ)' },
+        { คอลัมน์: 'สถานะ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ลงรับแล้ว / อยู่ระหว่างดำเนินการ / ดำเนินการแล้ว (ค่าเริ่มต้น: ลงรับแล้ว)' },
+        { คอลัมน์: 'ผู้รับผิดชอบ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อผู้รับผิดชอบ (ค่าเริ่มต้น: นิศาชล คงดี)' },
+      ],
+    },
+    outgoing: {
+      fileLabel: 'หนังสือส่ง',
+      colWidths: [20, 14, 46, 32, 16, 18],
+      sampleRows: [
+        {
+          เลขที่หนังสือส่ง: 'อบ 87303/101',
+          ลงวันที่: isoSample2,
+          เรื่อง: 'ขอความอนุเคราะห์ทดสอบตัวอย่างเหล็กเสริม โครงการถนน คสล.',
+          ผู้รับ: 'โยธาธิการและผังเมืองจังหวัดอุบลราชธานี',
+          สถานะ: 'ออกเอกสาร',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+        {
+          เลขที่หนังสือส่ง: 'อบ 87303/102',
+          ลงวันที่: isoSample3,
+          เรื่อง: 'ส่งมอบแบบแปลนและประมาณการโครงการซ่อมแซมระบบประปา',
+          ผู้รับ: 'นายอำเภอพิบูลมังสาหาร',
+          สถานะ: 'ดำเนินการแล้ว',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+      ],
+      guideRows: [
+        { คอลัมน์: 'เลขที่หนังสือส่ง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เลขที่หนังสือส่ง เช่น อบ 87303/101' },
+        { คอลัมน์: 'ลงวันที่', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'รองรับ YYYY-MM-DD, DD/MM/YYYY, วันที่ไทย หรือ Date ใน Excel' },
+        { คอลัมน์: 'เรื่อง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อเรื่องหนังสือส่ง' },
+        { คอลัมน์: 'ผู้รับ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อหน่วยงานหรือผู้รับปลายทาง' },
+        { คอลัมน์: 'สถานะ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ออกเอกสาร / อยู่ระหว่างดำเนินการ / ดำเนินการแล้ว (ค่าเริ่มต้น: ออกเอกสาร)' },
+        { คอลัมน์: 'ผู้รับผิดชอบ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อผู้รับผิดชอบ (ค่าเริ่มต้น: นิศาชล คงดี)' },
+      ],
+    },
+    orders: {
+      fileLabel: 'คำสั่ง',
+      colWidths: [18, 14, 48, 16, 18],
+      sampleRows: [
+        {
+          เลขที่คำสั่ง: `ที่ 12/${currentYear}`,
+          ลงวันที่: isoSample1,
+          เรื่อง: 'แต่งตั้งคณะกรรมการกำหนดราคากลางโครงการก่อสร้างถนน คสล.',
+          สถานะ: 'ออกเอกสาร',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+        {
+          เลขที่คำสั่ง: `ที่ 13/${currentYear}`,
+          ลงวันที่: isoSample3,
+          เรื่อง: 'แต่งตั้งผู้ควบคุมงานและคณะกรรมการตรวจรับพัสดุ',
+          สถานะ: 'ออกเอกสาร',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+      ],
+      guideRows: [
+        { คอลัมน์: 'เลขที่คำสั่ง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: `เช่น ที่ 12/${currentYear}` },
+        { คอลัมน์: 'ลงวันที่', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'รองรับ YYYY-MM-DD, DD/MM/YYYY, วันที่ไทย หรือ Date ใน Excel' },
+        { คอลัมน์: 'เรื่อง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อเรื่องคำสั่ง' },
+        { คอลัมน์: 'สถานะ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ค่าเริ่มต้น: ออกเอกสาร' },
+        { คอลัมน์: 'ผู้รับผิดชอบ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อผู้รับผิดชอบ (ค่าเริ่มต้น: นิศาชล คงดี)' },
+      ],
+    },
+    memos: {
+      fileLabel: 'บันทึกข้อความ',
+      colWidths: [18, 22, 14, 34, 46, 16, 18],
+      sampleRows: [
+        {
+          งาน: 'งานโยธา',
+          เลขที่บันทึก: 'อบ 87303/10-07/01',
+          ลงวันที่: isoSample2,
+          เรียน: 'นายกองค์การบริหารส่วนตำบลไร่ใต้',
+          เรื่อง: 'ขออนุมัติแต่งตั้งคณะกรรมการจัดทำขอบเขตของงาน (TOR)',
+          สถานะ: 'ออกเอกสาร',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+        {
+          งาน: 'งานไฟฟ้า',
+          เลขที่บันทึก: 'อบ 87303/10-08/01',
+          ลงวันที่: isoSample3,
+          เรียน: 'นายกองค์การบริหารส่วนตำบลไร่ใต้',
+          เรื่อง: 'ขออนุมัติจัดซื้อวัสดุไฟฟ้าเพื่อซ่อมแซมไฟฟ้าสาธารณะ',
+          สถานะ: 'ออกเอกสาร',
+          ผู้รับผิดชอบ: 'นิศาชล คงดี',
+        },
+      ],
+      guideRows: [
+        { คอลัมน์: 'งาน', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เช่น งานโยธา, งานไฟฟ้า, งานประปา, งานธุรการ, งานสารบรรณ' },
+        { คอลัมน์: 'เลขที่บันทึก', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เช่น อบ 87303/10-07/01' },
+        { คอลัมน์: 'ลงวันที่', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'รองรับ YYYY-MM-DD, DD/MM/YYYY, วันที่ไทย หรือ Date ใน Excel' },
+        { คอลัมน์: 'เรียน', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เช่น นายกองค์การบริหารส่วนตำบลไร่ใต้' },
+        { คอลัมน์: 'เรื่อง', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อเรื่องบันทึกข้อความ' },
+        { คอลัมน์: 'สถานะ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ค่าเริ่มต้น: ออกเอกสาร' },
+        { คอลัมน์: 'ผู้รับผิดชอบ', ความจำเป็น: 'ไม่บังคับ', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อผู้รับผิดชอบ (ค่าเริ่มต้น: นิศาชล คงดี)' },
+      ],
+    },
+    vouchers: {
+      fileLabel: 'ฎีกาเบิกจ่าย',
+      colWidths: [14, 18, 20, 18, 28, 16, 44],
+      sampleRows: [
+        {
+          วันที่จัดทำ: isoSample2,
+          ผู้จัดทำ: 'นิศาชล คงดี',
+          เลขที่ผู้เบิก: `ฎีกาที่ 1/${currentYear}`,
+          ประเภทฎีกา: 'ค่าวัสดุก่อสร้าง',
+          ผู้รับเงิน: 'หจก.ไร่ใต้การช่าง',
+          จำนวนเงิน: 45000,
+          ชื่อโครงการ: 'โครงการซ่อมแซมถนนลูกรังภายในตำบล',
+        },
+        {
+          วันที่จัดทำ: isoSample3,
+          ผู้จัดทำ: 'นิศาชล คงดี',
+          เลขที่ผู้เบิก: `ฎีกาที่ 2/${currentYear}`,
+          ประเภทฎีกา: 'ค่าจ้างเหมา',
+          ผู้รับเงิน: 'ร้านพิบูลไฟฟ้าและวัสดุ',
+          จำนวนเงิน: 28500.5,
+          ชื่อโครงการ: 'โครงการซ่อมแซมระบบไฟฟ้าสาธารณะ หมู่ที่ 5',
+        },
+      ],
+      guideRows: [
+        { คอลัมน์: 'วันที่จัดทำ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'รองรับ YYYY-MM-DD, DD/MM/YYYY, วันที่ไทย หรือ Date ใน Excel' },
+        { คอลัมน์: 'ผู้จัดทำ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อผู้จัดทำฎีกา' },
+        { คอลัมน์: 'เลขที่ผู้เบิก', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: `เช่น ฎีกาที่ 1/${currentYear}` },
+        { คอลัมน์: 'ประเภทฎีกา', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'เช่น ค่าวัสดุก่อสร้าง, ค่าจ้างเหมา, ค่าสาธารณูปโภค' },
+        { คอลัมน์: 'ผู้รับเงิน', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อร้านค้า ห้างหุ้นส่วน หรือบุคคลผู้รับเงิน' },
+        { คอลัมน์: 'จำนวนเงิน', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ตัวเลขจำนวนเงินขอเบิก (บาท) เช่น 45000 หรือ 28500.50' },
+        { คอลัมน์: 'ชื่อโครงการ', ความจำเป็น: 'จำเป็น', คำอธิบายและรูปแบบที่รองรับ: 'ชื่อโครงการหรือรายละเอียดการเบิกจ่าย' },
+      ],
+    },
+  };
+
+  const spec = templates[type];
+  if (!spec) return false;
+
+  const workbook = XLSX.utils.book_new();
+  const dataSheet = XLSX.utils.json_to_sheet(spec.sampleRows);
+  dataSheet['!cols'] = spec.colWidths.map((wch) => ({ wch }));
+  XLSX.utils.book_append_sheet(workbook, dataSheet, 'ข้อมูลนำเข้า');
+
+  const guideRowsWithNote = [
+    ...spec.guideRows,
+    {
+      คอลัมน์: 'หมายเหตุสำคัญ',
+      ความจำเป็น: '-',
+      คำอธิบายและรูปแบบที่รองรับ:
+        'ระบบจะอ่านข้อมูลจากชีตแรก ("ข้อมูลนำเข้า") เท่านั้น กรุณาลบหรือแก้ไขทับแถวตัวอย่าง 2 แถวแรกก่อนอัปโหลดนำเข้าจริง และห้ามเปลี่ยนชื่อหัวคอลัมน์แถวที่ 1',
+    },
+  ];
+  const guideSheet = XLSX.utils.json_to_sheet(guideRowsWithNote);
+  guideSheet['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 76 }];
+  XLSX.utils.book_append_sheet(workbook, guideSheet, 'คำแนะนำการกรอก');
+
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `แบบฟอร์มนำเข้า_${spec.fileLabel}_${currentYear}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
 }
 
 export function exportRegisterCSV(docs: SarabanDoc[], type: DocType): boolean {

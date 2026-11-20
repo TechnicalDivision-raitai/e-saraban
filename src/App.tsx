@@ -61,6 +61,7 @@ import {
 import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
 import { ADMIN_USER, STAFF_USER, TAB_TITLES } from './types/saraban';
 import {
+  downloadExcelImportTemplate,
   exportRegisterCSV,
   formatThaiDateTime,
   getNextMemoDocNumber,
@@ -1657,6 +1658,19 @@ export default function App() {
     }
   };
 
+  const handleDownloadExcelTemplate = (type: DocType) => {
+    const ok = downloadExcelImportTemplate(type);
+    if (!ok) {
+      pushToast('warning', 'ไม่รองรับแบบฟอร์มนี้', 'ทะเบียนนี้ไม่รองรับการนำเข้าผ่าน Excel');
+    } else {
+      pushToast(
+        'success',
+        'ดาวน์โหลดตัวอย่างแบบฟอร์ม Excel แล้ว',
+        'กรุณากรอกข้อมูลในชีต "ข้อมูลนำเข้า" (ลบแถวตัวอย่างก่อนอัปโหลดจริง)'
+      );
+    }
+  };
+
   return (
     <div className="min-h-dvh bg-[#F8F7FB] text-[#242038]">
       {/* Initial Login Gate or Role Switch Modal */}
@@ -1751,6 +1765,7 @@ export default function App() {
                   onUpdateStatusDoc={(doc) => setStatusTargetDoc(doc)}
                   onExportCSV={handleExportCSV}
                   onImportExcel={handleImportExcel}
+                  onDownloadExcelTemplate={handleDownloadExcelTemplate}
                   onPrintRegisterReport={(title, rows, filterLabel) =>
                     setRegisterReport({ title, rows, filterLabel })
                   }

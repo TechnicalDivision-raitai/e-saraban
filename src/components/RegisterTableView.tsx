@@ -6,6 +6,7 @@ import {
   Clock,
   Download,
   Eye,
+  FileDown,
   FileSpreadsheet,
   Paperclip,
   Pencil,
@@ -64,6 +65,7 @@ interface RegisterTableViewProps {
   onUpdateStatusDoc: (doc: SarabanDoc) => void;
   onExportCSV: (type: DocType) => void;
   onImportExcel: (type: DocType, yearStr: string, file: File) => void;
+  onDownloadExcelTemplate?: (type: DocType) => void;
   onPrintRegisterReport: (title: string, rows: SarabanDoc[], filterLabel: string) => void;
   onRetrySync: () => void;
   onRefreshProjectQueues?: () => void;
@@ -88,6 +90,7 @@ export function RegisterTableView({
   onUpdateStatusDoc,
   onExportCSV,
   onImportExcel,
+  onDownloadExcelTemplate,
   onPrintRegisterReport,
   onRetrySync,
   onRefreshProjectQueues,
@@ -544,6 +547,17 @@ export function RegisterTableView({
                     e.target.value = '';
                   }}
                 />
+                {onDownloadExcelTemplate && (
+                  <button
+                    type="button"
+                    onClick={() => onDownloadExcelTemplate(tabId as DocType)}
+                    title={`ดาวน์โหลดตัวอย่างแบบฟอร์ม Excel (.xlsx) สำหรับนำเข้าข้อมูล${tabMeta.title}`}
+                    className="bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  >
+                    <FileDown className="w-4 h-4 text-amber-700" />
+                    <span>ตัวอย่างแบบฟอร์ม Excel</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => excelInputRef.current?.click()}
