@@ -424,20 +424,20 @@ export function RegisterTableView({
     <div className="w-full flex-1 flex flex-col min-h-0">
       <div className="bg-white rounded-2xl border border-[#E5E2F0] shadow-[0_4px_20px_rgba(36,32,56,0.05)] overflow-hidden flex-1 flex flex-col min-h-0">
         {/* Heading & Filter Bar */}
-        <div className="p-4 sm:p-5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 shrink-0">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h2 className="text-base sm:text-lg font-bold text-[#242038]">
+        <div className="px-4 py-3.5 border-b border-[#ECEAF4] bg-[#FAF9FC] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 shrink-0">
+          <div className="min-w-0 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-bold text-[#242038]">
                 {tabMeta.title}
               </h2>
-              <span className="px-2.5 py-0.5 rounded-full border border-[#0EA5E9] bg-[#E0F2FE] text-[#0C4A6E] text-xs font-bold tabular-nums shadow-[0_0_10px_rgba(14,165,233,0.45),inset_0_0_4px_rgba(125,211,252,0.4)]">
+              <span className="px-2 py-0.5 rounded-full border border-[#0EA5E9] bg-[#E0F2FE] text-[#0C4A6E] text-[11px] font-bold tabular-nums shadow-[0_0_8px_rgba(14,165,233,0.35),inset_0_0_4px_rgba(125,211,252,0.4)]">
                 {filteredAndSortedRows.length} รายการ
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-0.5">{tabMeta.subtitle}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+          <div className="flex flex-wrap items-center gap-1.5 w-full xl:w-auto xl:justify-end">
             {tabId !== 'forms' && tabId !== 'overdue' && (
               <select
                 value={selectedYear}
@@ -445,7 +445,7 @@ export function RegisterTableView({
                   setYearFilterByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
                 }
                 aria-label="กรองตามปี"
-                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors focus:outline-none ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors focus:outline-none ${
                   selectedYear
                     ? 'border-[#B5B1C8] bg-white text-[#242038]'
                     : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
@@ -471,7 +471,7 @@ export function RegisterTableView({
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 aria-label="กรองตามสถานะ"
-                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors focus:outline-none ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors focus:outline-none ${
                   statusFilter
                     ? 'border-[#B5B1C8] bg-white text-[#242038]'
                     : 'border-[#E2DFEE] bg-white text-slate-800 hover:border-[#B5B1C8]'
@@ -487,16 +487,16 @@ export function RegisterTableView({
             )}
 
             {tabId !== 'overdue' && (
-              <div className="relative flex-1 sm:flex-initial min-w-[210px] sm:w-64">
-                <Search className="w-4 h-4 text-[#6B6293] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <div className="relative flex-1 sm:flex-initial min-w-[170px] sm:w-48 lg:w-52">
+                <Search className="w-3.5 h-3.5 text-[#6B6293] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="search"
                   value={searchQuery}
                   onChange={(e) =>
                     setSearchByTab((prev) => ({ ...prev, [tabId]: e.target.value }))
                   }
-                  placeholder="ค้นหาเรื่อง, เลขที่, ผู้เกี่ยวข้อง..."
-                  className={`w-full pl-9 pr-3 py-2 rounded-xl text-sm border transition-colors focus:outline-none ${
+                  placeholder="ค้นหาเรื่อง, เลขที่..."
+                  className={`w-full pl-8 pr-2.5 py-1.5 rounded-lg text-xs border transition-colors focus:outline-none ${
                     searchQuery
                       ? 'border-[#6B6293] bg-white text-[#242038]'
                       : 'border-[#DCD8EB] bg-white text-slate-800 focus:border-[#6B6293]'
@@ -513,16 +513,16 @@ export function RegisterTableView({
                   type="button"
                   disabled={isRefreshingProjectQueues}
                   onClick={onRefreshProjectQueues}
-                  title="ดึงสถานะคิวล่าสุด (Pending / Approved / Rejected) จากระบบงานโครงการและระบบจัดซื้อจัดจ้าง"
-                  className="bg-[#E0F2FE] hover:bg-[#BAE6FD] border border-[#7DD3FC] text-[#0C4A6E] px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-60"
+                  title="เช็คสถานะโครงการ/จัดซื้อฯ ล่าสุด (Pending / Approved / Rejected)"
+                  className="bg-[#E0F2FE] hover:bg-[#BAE6FD] border border-[#7DD3FC] text-[#0C4A6E] px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap shrink-0 disabled:opacity-60"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 ${isRefreshingProjectQueues ? 'animate-spin' : ''}`}
                   />
-                  <span>เช็คสถานะโครงการ/จัดซื้อฯ</span>
+                  <span>เช็คสถานะ</span>
                   {pendingProjectQueueCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-[#FEF3C7] border border-[#F59E0B] text-[#78350F] text-[11px] font-bold tabular-nums">
-                      รอ {pendingProjectQueueCount}
+                    <span className="px-1.5 rounded-full bg-[#FEF3C7] border border-[#F59E0B] text-[#78350F] text-[10px] font-bold tabular-nums">
+                      {pendingProjectQueueCount}
                     </span>
                   )}
                 </button>
@@ -552,19 +552,20 @@ export function RegisterTableView({
                     type="button"
                     onClick={() => onDownloadExcelTemplate(tabId as DocType)}
                     title={`ดาวน์โหลดตัวอย่างแบบฟอร์ม Excel (.xlsx) สำหรับนำเข้าข้อมูล${tabMeta.title}`}
-                    className="bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                    className="bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                   >
-                    <FileDown className="w-4 h-4 text-amber-700" />
-                    <span>ตัวอย่างแบบฟอร์ม Excel</span>
+                    <FileDown className="w-3.5 h-3.5 text-amber-700" />
+                    <span>ฟอร์ม Excel</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => excelInputRef.current?.click()}
-                  className="bg-[#F1EFF7] hover:bg-[#6B6293] border border-[#C9C4DC] hover:border-[#524A75] text-[#4A4173] hover:text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  title="นำเข้าข้อมูลจากไฟล์ Excel (.xlsx / .xls / .csv)"
+                  className="bg-[#F1EFF7] hover:bg-[#6B6293] border border-[#C9C4DC] hover:border-[#524A75] text-[#4A4173] hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>นำเข้า Excel</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>นำเข้า</span>
                 </button>
               </>
             )}
@@ -573,9 +574,10 @@ export function RegisterTableView({
               <button
                 type="button"
                 onClick={() => onExportCSV(tabId as DocType)}
-                className="bg-[#ECFDF5] hover:bg-[#DCFCE7] border border-[#86EFAC] text-[#15803D] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                title="ส่งออกข้อมูลทะเบียนเป็นไฟล์ CSV"
+                className="bg-[#ECFDF5] hover:bg-[#DCFCE7] border border-[#86EFAC] text-[#15803D] px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap shrink-0"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
                 <span>CSV</span>
               </button>
             )}
@@ -585,10 +587,11 @@ export function RegisterTableView({
               onClick={() =>
                 onPrintRegisterReport(tabMeta.title, filteredAndSortedRows, filterSummaryText)
               }
-              className="bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              title="พิมพ์รายงานทะเบียนขนาด A4"
+              className="bg-[#6B6293] hover:bg-[#574F7D] border border-[#524A75] text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap shrink-0"
             >
-              <Printer className="w-4 h-4" />
-              <span>พิมพ์รายงาน A4</span>
+              <Printer className="w-3.5 h-3.5" />
+              <span>พิมพ์ A4</span>
             </button>
           </div>
         </div>
