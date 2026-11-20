@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { normalizeWhitespace } from '../utils/sarabanUtils';
 
 interface SmartAutocompleteInputProps {
@@ -11,6 +12,14 @@ interface SmartAutocompleteInputProps {
   matchMode?: 'includes' | 'startsWith';
 }
 
+interface DropdownRect {
+  left: number;
+  width: number;
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
+}
+
 export function SmartAutocompleteInput({
   value,
   onChange,
@@ -20,8 +29,10 @@ export function SmartAutocompleteInput({
   ariaLabel,
   matchMode = 'includes',
 }: SmartAutocompleteInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null);
 
   const prefixQuery = useMemo(() => {
     if (matchMode !== 'startsWith') return '';
@@ -53,6 +64,57 @@ export function SmartAutocompleteInput({
 
   const showDropdown = isOpen && filtered.length > 0;
 
+  const updateDropdownPosition = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      setDropdownRect(null);
+      return;
+    }
+
+    const margin = 12;
+    const gap = 4;
+    const preferredMaxHeight = 208;
+    const spaceBelow = window.innerHeight - rect.bottom - margin;
+    const spaceAbove = rect.top - margin;
+
+    const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+    if (openUpward) {
+      setDropdownRect({
+        left: rect.left,
+        width: rect.width,
+        bottom: window.innerHeight - rect.top + gap,
+        maxHeight: Math.min(preferredMaxHeight, Math.max(110, spaceAbove - gap)),
+      });
+    } else {
+      setDropdownRect({
+        left: rect.left,
+        width: rect.width,
+        top: rect.bottom + gap,
+        maxHeight: Math.min(preferredMaxHeight, Math.max(110, spaceBelow - gap)),
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showDropdown) {
+      setDropdownRect(null);
+      return;
+    }
+    updateDropdownPosition();
+  }, [showDropdown, filtered.length, updateDropdownPosition]);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+    window.addEventListener('resize', updateDropdownPosition);
+    window.addEventListener('scroll', updateDropdownPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateDropdownPosition);
+      window.removeEventListener('scroll', updateDropdownPosition, true);
+    };
+  }, [showDropdown, updateDropdownPosition]);
+
   const handleSelect = (item: string) => {
     onChange(item);
     setIsOpen(false);
@@ -62,6 +124,7 @@ export function SmartAutocompleteInput({
   return (
     <div className="relative">
       <input
+        ref={inputRef}
         type="text"
         value={value}
         aria-label={ariaLabel}
@@ -100,42 +163,54 @@ export function SmartAutocompleteInput({
         className={className}
       />
 
-      {showDropdown && (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#C9C4DC] rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 saraban-scroll"
-        >
-          {filtered.map((item, idx) => (
-            <li key={item}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={idx === activeIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSelect(item);
-                }}
-                className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
-                  idx === activeIndex
-                    ? 'bg-[#ECEAF4] text-[#242038] font-semibold'
-                    : 'text-slate-800 hover:bg-[#F5F4F9] hover:text-[#242038]'
-                }`}
-              >
-                {matchMode === 'startsWith' && prefixQuery.length > 0 ? (
-                  <>
-                    <span className="font-bold text-[#574F7D]">
-                      {item.slice(0, prefixQuery.length)}
-                    </span>
-                    <span>{item.slice(prefixQuery.length)}</span>
-                  </>
-                ) : (
-                  item
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {showDropdown &&
+        dropdownRect &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <ul
+            role="listbox"
+            style={{
+              position: 'fixed',
+              left: dropdownRect.left,
+              width: dropdownRect.width,
+              top: dropdownRect.top,
+              bottom: dropdownRect.bottom,
+              maxHeight: dropdownRect.maxHeight,
+            }}
+            className="z-[9999] bg-white border border-[#C9C4DC] rounded-xl shadow-xl overflow-y-auto py-1 saraban-scroll"
+          >
+            {filtered.map((item, idx) => (
+              <li key={item}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={idx === activeIndex}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(item);
+                  }}
+                  className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
+                    idx === activeIndex
+                      ? 'bg-[#ECEAF4] text-[#242038] font-semibold'
+                      : 'text-slate-800 hover:bg-[#F5F4F9] hover:text-[#242038]'
+                  }`}
+                >
+                  {matchMode === 'startsWith' && prefixQuery.length > 0 ? (
+                    <>
+                      <span className="font-bold text-[#574F7D]">
+                        {item.slice(0, prefixQuery.length)}
+                      </span>
+                      <span>{item.slice(prefixQuery.length)}</span>
+                    </>
+                  ) : (
+                    item
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }
