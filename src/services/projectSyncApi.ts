@@ -8,6 +8,7 @@ const PROJECT_SYNC_REVISION_KEY = 'esaraban_project_sync_revisions_v1';
 const DELETED_PROJECT_QUEUES_KEY = 'esaraban_deleted_project_queues_v1';
 
 export type ProjectDocCategory =
+  | 'project_approval'
   | 'tor_order'
   | 'tor_approval'
   | 'ref_price'
@@ -27,6 +28,11 @@ export interface ProjectCategoryMeta {
 }
 
 export const PROJECT_DOC_CATEGORIES: ProjectCategoryMeta[] = [
+  {
+    value: 'project_approval',
+    label: 'หนังสือขออนุมัติโครงการ (ขั้นตอนที่ 1)',
+    hint: 'ส่งเลขที่หนังสือ ลงวันที่ และไฟล์แนบ ไปลงช่องหนังสือขออนุมัติโครงการในแท็บที่ 1 ให้อัตโนมัติ (ไม่ต้องกรอกฟิลด์เพิ่ม)',
+  },
   {
     value: 'tor_order',
     label: 'คำสั่งแต่งตั้ง กก. TOR / ราคากลาง',
@@ -372,6 +378,8 @@ export function buildSarabanCategoryPayload(
   fields: ProjectSyncCategoryFields
 ): Record<string, unknown> {
   switch (docCategory) {
+    case 'project_approval':
+      return {};
     case 'tor_order':
       return {
         ...(fields.assigneeName?.trim() ? { assigneeName: fields.assigneeName.trim() } : {}),
