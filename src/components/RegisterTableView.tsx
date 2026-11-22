@@ -14,9 +14,10 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  X,
   XCircle,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SarabanProcurementSyncRecord } from '../services/procurementSyncApi';
 import { formatProcurementDisplayTitle } from '../services/procurementSyncApi';
 import type { SarabanProjectSyncRecord } from '../services/projectSyncApi';
@@ -48,6 +49,18 @@ import {
 
 export type RegisterTabId = Exclude<TabId, 'dashboard' | 'vouchersSummary'>;
 
+export interface RegisterFilterPreset {
+  tabId: RegisterTabId;
+  year?: string;
+  statuses?: string[];
+  statusLabel?: string;
+  urgency?: string;
+  urgencies?: string[];
+  urgencyLabel?: string;
+  search?: string;
+  nonce: number;
+}
+
 interface RegisterTableViewProps {
   tabId: RegisterTabId;
   documents: SarabanDoc[];
@@ -57,6 +70,7 @@ interface RegisterTableViewProps {
   isLoading: boolean;
   loadError: string;
   selectedDocId: string | number | null;
+  externalFilter?: RegisterFilterPreset | null;
   onSelectDoc: (id: string | number) => void;
   onViewDoc: (doc: SarabanDoc) => void;
   onEditDoc: (doc: SarabanDoc) => void;
@@ -82,6 +96,7 @@ export function RegisterTableView({
   isLoading,
   loadError,
   selectedDocId,
+  externalFilter = null,
   onSelectDoc,
   onViewDoc,
   onEditDoc,
@@ -101,10 +116,64 @@ export function RegisterTableView({
 
   const [yearFilterByTab, setYearFilterByTab] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState('');
+  const [statusPresetByTab, setStatusPresetByTab] = useState<
+    Record<string, { statuses: string[]; label: string } | null>
+  >({});
+  const [urgencyFilterByTab, setUrgencyFilterByTab] = useState<
+    Record<string, { levels: string[]; label: string } | null>
+  >({});
   const [searchByTab, setSearchByTab] = useState<Record<string, string>>({});
   const [sortByTab, setSortByTab] = useState<Record<string, SortState>>({});
 
   const excelInputRef = useRef<HTMLInputElement | null>(null);
+  const appliedFilterNonceRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!externalFilter || externalFilter.tabId !== tabId) return;
+    if (appliedFilterNonceRef.current === externalFilter.nonce) return;
+    appliedFilterNonceRef.current = externalFilter.nonce;
+
+    if (externalFilter.year !== undefined) {
+      setYearFilterByTab((prev) => ({ ...prev, [tabId]: externalFilter.year || '' }));
+    }
+    setStatusPresetByTab((prev) => ({
+      ...prev,
+      [tabId]:
+        externalFilter.statuses && externalFilter.statuses.length > 0
+          ? {
+              statuses: externalFilter.statuses,
+              label: externalFilter.statusLabel || externalFilter.statuses.join(' / '),
+            }
+          : null,
+    }));
+    if (tabId === 'myInbox') {
+      setStatusFilter(
+        externalFilter.statuses && externalFilter.statuses.length === 1
+          ? externalFilter.statuses[0]
+          : ''
+      );
+    }
+    const urgencyLevels =
+      externalFilter.urgencies && externalFilter.urgencies.length > 0
+        ? externalFilter.urgencies
+        : externalFilter.urgency
+        ? [externalFilter.urgency]
+        : [];
+    setUrgencyFilterByTab((prev) => ({
+      ...prev,
+      [tabId]:
+        urgencyLevels.length > 0
+          ? {
+              levels: urgencyLevels,
+              label: externalFilter.urgencyLabel || urgencyLevels.join(' / '),
+            }
+          : null,
+    }));
+    setSearchByTab((prev) => ({
+      ...prev,
+      [tabId]: externalFilter.search ?? '',
+    }));
+  }, [externalFilter, tabId]);
 
   const currentCalendarYear = getCurrentBuddhistYear();
   const currentFiscalYear = getCurrentFiscalYear();
@@ -153,6 +222,9 @@ export function RegisterTableView({
     [baseDocsForTab]
   );
 
+  const activeStatusPreset = statusPresetByTab[tabId] || null;
+  const activeUrgencyFilter = urgencyFilterByTab[tabId] || null;
+
   const filteredAndSortedRows = useMemo(() => {
     let rows = baseDocsForTab.filter((d) => {
       if (selectedYear === CURRENT_YEAR_FILTER_KEY) {
@@ -161,6 +233,14 @@ export function RegisterTableView({
         return false;
       }
       if (tabId === 'myInbox' && statusFilter && d.status !== statusFilter) return false;
+      if (activeStatusPreset && activeStatusPreset.statuses.length > 0) {
+        const docStatus = String(d.status || '').trim();
+        if (!activeStatusPreset.statuses.includes(docStatus)) return false;
+      }
+      if (activeUrgencyFilter && activeUrgencyFilter.levels.length > 0) {
+        const docUrgency = String(d.urgency || 'ปกติ').trim() || 'ปกติ';
+        if (!activeUrgencyFilter.levels.includes(docUrgency)) return false;
+      }
       if (searchQuery && !matchesDocumentSearch(d, searchQuery)) return false;
       return true;
     });
@@ -216,7 +296,16 @@ export function RegisterTableView({
     }
 
     return rows;
-  }, [baseDocsForTab, selectedYear, statusFilter, searchQuery, sortState, tabId]);
+  }, [
+    baseDocsForTab,
+    selectedYear,
+    statusFilter,
+    activeStatusPreset,
+    activeUrgencyFilter,
+    searchQuery,
+    sortState,
+    tabId,
+  ]);
 
   const toggleSort = (field: string) => {
     setSortByTab((prev) => {
@@ -469,7 +558,10 @@ export function RegisterTableView({
             {tabId === 'myInbox' && (
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setStatusPresetByTab((prev) => ({ ...prev, [tabId]: null }));
+                }}
                 aria-label="กรองตามสถานะ"
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors focus:outline-none ${
                   statusFilter
@@ -484,6 +576,34 @@ export function RegisterTableView({
                   </option>
                 ))}
               </select>
+            )}
+
+            {activeStatusPreset && (
+              <button
+                type="button"
+                onClick={() =>
+                  setStatusPresetByTab((prev) => ({ ...prev, [tabId]: null }))
+                }
+                title="คลิกเพื่อล้างตัวกรองสถานะ"
+                className="px-2.5 py-1.5 rounded-lg border border-[#B5B1C8] bg-[#ECEAF4] hover:bg-[#E2DFEE] text-[#242038] text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
+              >
+                <span>สถานะ: {activeStatusPreset.label}</span>
+                <X className="w-3.5 h-3.5 text-[#574F7D]" />
+              </button>
+            )}
+
+            {activeUrgencyFilter && (
+              <button
+                type="button"
+                onClick={() =>
+                  setUrgencyFilterByTab((prev) => ({ ...prev, [tabId]: null }))
+                }
+                title="คลิกเพื่อล้างตัวกรองความเร่งด่วน"
+                className="px-2.5 py-1.5 rounded-lg border border-[#F59E0B] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
+              >
+                <span>ความเร็ว: {activeUrgencyFilter.label}</span>
+                <X className="w-3.5 h-3.5" />
+              </button>
             )}
 
             {tabId !== 'overdue' && (

@@ -8,7 +8,7 @@ import type { DocumentFormPayload } from './components/DocumentWizardModal';
 import { DocumentWizardModal } from './components/DocumentWizardModal';
 import { LoginScreen } from './components/LoginScreen';
 import { CoverSheetPrintModal, RegisterReportPrintModal } from './components/PrintViews';
-import type { RegisterTabId } from './components/RegisterTableView';
+import type { RegisterFilterPreset, RegisterTabId } from './components/RegisterTableView';
 import { RegisterTableView } from './components/RegisterTableView';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
@@ -93,7 +93,9 @@ function loadSavedAuthSession(): { user: UserSession; isAuthenticated: boolean }
 
 function loadSavedActiveTab(isAdminSession: boolean): TabId {
   try {
-    const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as TabId | null;
+    // Clean up legacy localStorage key so reopening after closing the browser always starts on dashboard
+    localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
+    const saved = sessionStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as TabId | null;
     if (saved && Object.prototype.hasOwnProperty.call(TAB_TITLES, saved)) {
       if (saved === 'myInbox' && !isAdminSession) {
         return 'dashboard';
@@ -128,6 +130,9 @@ export default function App() {
   const [pendingWriteCount, setPendingWriteCount] = useState(0);
   const [syncError, setSyncError] = useState('');
   const [selectedDocId, setSelectedDocId] = useState<string | number | null>(null);
+  const [registerFilterPreset, setRegisterFilterPreset] = useState<RegisterFilterPreset | null>(
+    null
+  );
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<SarabanDoc | null>(null);
@@ -554,27 +559,35 @@ export default function App() {
   }, []);
 
   const handleLoginAdmin = () => {
+    const wasAuthenticated = isAuthenticated;
     setCurrentUser(ADMIN_USER);
     setIsAuthenticated(true);
     setShowRoleModal(false);
     try {
       localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify({ role: 'admin' }));
     } catch {}
+    if (!wasAuthenticated) {
+      setActiveTab('dashboard');
+      try {
+        sessionStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'dashboard');
+      } catch {}
+    }
     syncFromDrive({ silent: documents.length > 0 });
     pushToast('success', 'เข้าสู่ระบบสำเร็จ', 'สิทธิ์ผู้ดูแลระบบ (นส. นิศาชล คงดี)');
   };
 
   const handleLoginStaff = () => {
+    const wasAuthenticated = isAuthenticated;
     setCurrentUser(STAFF_USER);
     setIsAuthenticated(true);
     setShowRoleModal(false);
     try {
       localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify({ role: 'staff' }));
     } catch {}
-    if (activeTab === 'myInbox') {
+    if (!wasAuthenticated || activeTab === 'myInbox') {
       setActiveTab('dashboard');
       try {
-        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'dashboard');
+        sessionStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'dashboard');
       } catch {}
     }
     syncFromDrive({ silent: documents.length > 0 });
@@ -584,8 +597,10 @@ export default function App() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setShowRoleModal(false);
+    setActiveTab('dashboard');
     try {
       localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
     } catch {}
   };
 
@@ -593,8 +608,19 @@ export default function App() {
     const nextTab: TabId = tab === 'myInbox' && !isAdmin ? 'dashboard' : tab;
     setActiveTab(nextTab);
     try {
-      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextTab);
+      sessionStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextTab);
     } catch {}
+  };
+
+  const handleNavigateWithFilter = (preset: Omit<RegisterFilterPreset, 'nonce'>) => {
+    const targetTab: RegisterTabId =
+      preset.tabId === 'myInbox' && !isAdmin ? 'allDocs' : preset.tabId;
+    setRegisterFilterPreset({
+      ...preset,
+      tabId: targetTab,
+      nonce: Date.now(),
+    });
+    handleSelectTab(targetTab);
   };
 
   const myInboxCount = useMemo(() => {
@@ -1720,17 +1746,21 @@ export default function App() {
               {activeTab === 'dashboard' && (
                 <DashboardView
                   documents={documents}
+                  projectSyncMap={projectSyncMap}
+                  procurementSyncMap={procurementSyncMap}
                   isLoading={isLoadingDocs}
-                  isAdmin={isAdmin}
+                  isSyncing={isSyncing || pendingWriteCount > 0}
                   selectedDocId={selectedDocId}
-                  onSelectDoc={(id) => setSelectedDocId(id)}
                   onViewDoc={(doc) => {
                     setSelectedDocId(doc.id);
                     setDetailDoc(doc);
                   }}
-                  onEditDoc={handleEditDoc}
-                  onDeleteDoc={(doc) => setDeleteTargetDoc(doc)}
-                  onNavigateTab={handleSelectTab}
+                  onRefreshData={() => {
+                    syncFromDrive({ force: true });
+                    syncProjectQueueStatuses({ silent: true });
+                    syncProcurementQueueStatuses({ silent: true });
+                  }}
+                  onNavigateWithFilter={handleNavigateWithFilter}
                 />
               )}
 
@@ -1754,6 +1784,7 @@ export default function App() {
                   isLoading={isLoadingDocs}
                   loadError={syncError}
                   selectedDocId={selectedDocId}
+                  externalFilter={registerFilterPreset}
                   onSelectDoc={(id) => setSelectedDocId(id)}
                   onViewDoc={(doc) => {
                     setSelectedDocId(doc.id);
