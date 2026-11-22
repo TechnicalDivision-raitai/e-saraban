@@ -678,8 +678,8 @@ export function DashboardView({
   };
 
   // SVG Donut Geometry
-  const donutRadius = 56;
-  const donutStroke = 18;
+  const donutRadius = 51;
+  const donutStroke = 30;
   const donutCircumference = 2 * Math.PI * donutRadius;
   const donutSegments = useMemo(() => {
     const total = filteredDocs.length;
@@ -763,13 +763,13 @@ export function DashboardView({
       {/* 2. Filter Strip */}
       <section
         aria-label="ตัวกรองข้อมูลภาพรวมงานสารบรรณ"
-        className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-2.5"
       >
         {/* Filter 1: Document Type */}
-        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-xl border border-[#E2DDF0] shadow-[0_1px_8px_rgba(36,32,56,0.03)] px-3.5 py-2.5 transition-colors">
+        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-lg border border-[#E2DDF0] shadow-[0_1px_4px_rgba(36,32,56,0.03)] px-3 py-1.5 transition-colors">
           <label
             htmlFor="dash-filter-type"
-            className="block text-[11px] font-semibold text-[#574F7D] mb-0.5"
+            className="block text-[10.5px] leading-tight font-semibold text-[#574F7D]"
           >
             ประเภทหนังสือ / ทะเบียน
           </label>
@@ -777,7 +777,7 @@ export function DashboardView({
             id="dash-filter-type"
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="w-full px-0 py-1 rounded-md border-0 bg-transparent text-sm font-semibold text-[#242038] focus:outline-none cursor-pointer"
+            className="w-full px-0 py-0.5 rounded border-0 bg-transparent text-xs sm:text-[13px] font-semibold text-[#242038] focus:outline-none cursor-pointer"
           >
             <option value="">ทั้งหมด (ทุกทะเบียน)</option>
             {DOC_TYPE_ORDER.map((type) => (
@@ -789,10 +789,10 @@ export function DashboardView({
         </div>
 
         {/* Filter 2: Status */}
-        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-xl border border-[#E2DDF0] shadow-[0_1px_8px_rgba(36,32,56,0.03)] px-3.5 py-2.5 transition-colors">
+        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-lg border border-[#E2DDF0] shadow-[0_1px_4px_rgba(36,32,56,0.03)] px-3 py-1.5 transition-colors">
           <label
             htmlFor="dash-filter-status"
-            className="block text-[11px] font-semibold text-[#574F7D] mb-0.5"
+            className="block text-[10.5px] leading-tight font-semibold text-[#574F7D]"
           >
             สถานะการดำเนินงาน
           </label>
@@ -800,7 +800,7 @@ export function DashboardView({
             id="dash-filter-status"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="w-full px-0 py-1 rounded-md border-0 bg-transparent text-sm font-semibold text-[#242038] focus:outline-none cursor-pointer"
+            className="w-full px-0 py-0.5 rounded border-0 bg-transparent text-xs sm:text-[13px] font-semibold text-[#242038] focus:outline-none cursor-pointer"
           >
             <option value="">ทุกสถานะ</option>
             {availableStatuses.map((s) => (
@@ -812,11 +812,11 @@ export function DashboardView({
         </div>
 
         {/* Filter 3: Year + Refresh Action */}
-        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-xl border border-[#E2DDF0] shadow-[0_1px_8px_rgba(36,32,56,0.03)] px-3.5 py-2.5 transition-colors">
-          <div className="flex items-center justify-between gap-2 mb-0.5">
+        <div className="bg-[#F4F2FA] hover:bg-[#EFEBF8] focus-within:bg-[#EFEBF8] focus-within:border-[#6B6293] rounded-lg border border-[#E2DDF0] shadow-[0_1px_4px_rgba(36,32,56,0.03)] px-3 py-1.5 transition-colors">
+          <div className="flex items-center justify-between gap-2">
             <label
               htmlFor="dash-filter-year"
-              className="block text-[11px] font-semibold text-[#574F7D]"
+              className="block text-[10.5px] leading-tight font-semibold text-[#574F7D]"
             >
               ปี พ.ศ. / ปีงบประมาณ
             </label>
@@ -827,9 +827,9 @@ export function DashboardView({
                   setFilterType('');
                   setFilterStatus('');
                 }}
-                className="text-[11px] font-semibold text-[#6B6293] hover:text-[#242038] inline-flex items-center gap-0.5 transition-colors"
+                className="text-[10.5px] leading-tight font-semibold text-[#6B6293] hover:text-[#242038] inline-flex items-center gap-0.5 transition-colors"
               >
-                <RotateCcw className="w-3 h-3" />
+                <RotateCcw className="w-2.5 h-2.5" />
                 <span>ล้างตัวกรอง</span>
               </button>
             )}
@@ -839,7 +839,7 @@ export function DashboardView({
               id="dash-filter-year"
               value={filterYear}
               onChange={(e) => setFilterYear(e.target.value)}
-              className="flex-1 min-w-0 px-0 py-1 rounded-md border-0 bg-transparent text-sm font-semibold text-[#242038] focus:outline-none tabular-nums cursor-pointer"
+              className="flex-1 min-w-0 px-0 py-0.5 rounded border-0 bg-transparent text-xs sm:text-[13px] font-semibold text-[#242038] focus:outline-none tabular-nums cursor-pointer"
             >
               <option value={CURRENT_YEAR_FILTER_KEY}>
                 ปีปัจจุบัน ({currentCalendarYear} / งบฯ {currentFiscalYear})
@@ -858,9 +858,9 @@ export function DashboardView({
                 disabled={isSyncing}
                 title="รีเฟรชข้อมูลล่าสุดจาก Google Drive"
                 aria-label="รีเฟรชข้อมูลล่าสุด"
-                className="w-8 h-8 rounded-lg border border-[#D8D2E8] bg-white/80 hover:bg-[#6B6293] text-[#4A4173] hover:text-white inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-60"
+                className="w-6 h-6 rounded-md border border-[#D8D2E8] bg-white/80 hover:bg-[#6B6293] text-[#4A4173] hover:text-white inline-flex items-center justify-center shrink-0 transition-colors disabled:opacity-60"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
               </button>
             )}
           </div>
@@ -880,7 +880,7 @@ export function DashboardView({
 
           <div className="p-4 flex-1 flex flex-col sm:flex-row lg:flex-col xl:flex-row items-center justify-center gap-4">
             {/* SVG Donut by Document Type */}
-            <div className="relative w-[144px] h-[144px] shrink-0 flex items-center justify-center">
+            <div className="relative w-[156px] h-[156px] shrink-0 flex items-center justify-center">
               <svg
                 viewBox="0 0 144 144"
                 className="w-full h-full -rotate-90"
@@ -926,28 +926,28 @@ export function DashboardView({
                   );
                 })}
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-3 pointer-events-none">
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pointer-events-none">
                 {activeDonutGroup ? (
                   <>
                     <span
-                      className="text-xl font-bold tabular-nums leading-tight"
+                      className="text-lg font-bold tabular-nums leading-tight"
                       style={{ color: activeDonutGroup.color }}
                     >
                       {activeDonutGroup.count.toLocaleString('th-TH')}
                     </span>
-                    <span className="text-xs font-bold text-[#242038] tabular-nums">
+                    <span className="text-[11px] font-bold text-[#242038] tabular-nums leading-tight">
                       {activeDonutGroup.pct.toFixed(1)}%
                     </span>
-                    <span className="text-[10px] text-[#574F7D] leading-tight line-clamp-1 max-w-[92px]">
+                    <span className="text-[9.5px] text-[#574F7D] leading-tight line-clamp-1 max-w-[70px]">
                       {activeDonutGroup.label}
                     </span>
                   </>
                 ) : (
                   <>
-                    <span className="text-2xl font-bold text-[#242038] tabular-nums leading-tight">
+                    <span className="text-xl font-bold text-[#242038] tabular-nums leading-tight">
                       {filteredDocs.length.toLocaleString('th-TH')}
                     </span>
-                    <span className="text-[11px] font-medium text-[#574F7D]">เรื่องทั้งหมด</span>
+                    <span className="text-[10px] font-medium text-[#574F7D]">เรื่องทั้งหมด</span>
                   </>
                 )}
               </div>
