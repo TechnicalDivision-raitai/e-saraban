@@ -797,6 +797,74 @@ export async function prepareFileForUpload(
   };
 }
 
+export function validateAttachmentUrl(rawUrl: string): {
+  valid: boolean;
+  normalizedUrl: string;
+  error?: string;
+} {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) {
+    return { valid: true, normalizedUrl: '' };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    const hasValidHost =
+      Boolean(parsed.hostname) &&
+      (parsed.hostname.includes('.') || parsed.hostname === 'localhost');
+
+    if (!isHttp || !hasValidHost) {
+      return {
+        valid: false,
+        normalizedUrl: trimmed,
+        error: 'กรุณาระบุลิงก์ URL ที่ถูกต้อง (ต้องขึ้นต้นด้วย https:// หรือ http://)',
+      };
+    }
+
+    return { valid: true, normalizedUrl: parsed.href };
+  } catch {
+    return {
+      valid: false,
+      normalizedUrl: trimmed,
+      error: 'รูปแบบลิงก์ URL ไม่ถูกต้อง กรุณาคัดลอกลิงก์เต็มที่ขึ้นต้นด้วย https://',
+    };
+  }
+}
+
+export function resolveManualAttachmentName(customName: string, url: string): string {
+  const cleanedName = normalizeWhitespace(customName);
+  if (cleanedName) {
+    return cleanedName;
+  }
+
+  try {
+    const parsed = new URL(url.trim());
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('drive.google.com') || host.includes('docs.google.com')) {
+      return 'ไฟล์แนบ Google Drive';
+    }
+
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const lastSegment = segments[segments.length - 1];
+    if (lastSegment) {
+      let decoded = lastSegment;
+      try {
+        decoded = decodeURIComponent(lastSegment);
+      } catch {
+        decoded = lastSegment;
+      }
+      if (/\.[a-z0-9]{2,6}$/i.test(decoded) && decoded.length <= 120) {
+        return decoded;
+      }
+    }
+  } catch {
+    // Fallback below
+  }
+
+  return 'เอกสารแนบ (ลิงก์ URL)';
+}
+
 export async function parseExcelToImportRecords(
   file: File,
   importType: DocType,

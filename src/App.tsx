@@ -68,6 +68,8 @@ import {
   getNextRegNoForYear,
   getTodayISO,
   getUniqueNormalizedSuggestions,
+  resolveManualAttachmentName,
+  validateAttachmentUrl,
   isOverdueDoc,
   mapRawRecordToDoc,
   parseExcelToImportRecords,
@@ -845,6 +847,22 @@ export default function App() {
         setIsSubmittingDoc(false);
         setUploadPhaseLabel('');
       }
+    } else if (payload.manualFileUrl?.trim()) {
+      const checked = validateAttachmentUrl(payload.manualFileUrl);
+      if (!checked.valid) {
+        pushToast(
+          'error',
+          'ลิงก์ไฟล์แนบไม่ถูกต้อง',
+          checked.error || 'กรุณาตรวจสอบรูปแบบ URL (ต้องขึ้นต้นด้วย https:// หรือ http://)'
+        );
+        return;
+      }
+      uploadedFileUrl = checked.normalizedUrl;
+      uploadedFileName = resolveManualAttachmentName(
+        payload.manualFileName || '',
+        checked.normalizedUrl
+      );
+      uploadedMimeType = inferMimeTypeFromFileName(uploadedFileName);
     }
 
     const previousDocs = documents;
@@ -1319,6 +1337,21 @@ export default function App() {
         setIsSubmittingDoc(false);
         setUploadPhaseLabel('');
       }
+    } else if (payload.manualFileUrl?.trim()) {
+      const checked = validateAttachmentUrl(payload.manualFileUrl);
+      if (!checked.valid) {
+        pushToast(
+          'error',
+          'ลิงก์ไฟล์แนบไม่ถูกต้อง',
+          checked.error || 'กรุณาตรวจสอบรูปแบบ URL (ต้องขึ้นต้นด้วย https:// หรือ http://)'
+        );
+        return;
+      }
+      uploadedFileUrl = checked.normalizedUrl;
+      uploadedFileName = resolveManualAttachmentName(
+        payload.manualFileName || '',
+        checked.normalizedUrl
+      );
     }
 
     const previousDocs = documents;
@@ -1454,6 +1487,58 @@ export default function App() {
           fileSize: uploaded.fileSize,
           mimeType: uploaded.mimeType,
         };
+      } else if (quickFilePayload.manualFileUrl?.trim()) {
+        const checked = validateAttachmentUrl(quickFilePayload.manualFileUrl);
+        if (!checked.valid) {
+          throw new Error(checked.error || 'ลิงก์ไฟล์แนบไม่ถูกต้อง');
+        }
+        const manualUrl = checked.normalizedUrl;
+        const manualName = resolveManualAttachmentName(
+          quickFilePayload.manualFileName || '',
+          manualUrl
+        );
+
+        const nextDocs = documents.map((d) =>
+          String(d.id) === String(doc.id)
+            ? {
+                ...d,
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                dueDate: quickFilePayload.dueDate,
+                fileName: manualName,
+                fileData: manualUrl,
+              }
+            : d
+        );
+        setDocuments(nextDocs);
+        saveDocsCache(nextDocs);
+        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
+        setDetailDoc(updatedDetail);
+
+        enqueueBackgroundWrite(
+          async () => {
+            await callDriveApi({
+              action: 'update',
+              id: doc.id,
+              type: doc.type,
+              updates: {
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                due_date: quickFilePayload.dueDate,
+                file_name: manualName,
+                file_url: manualUrl,
+              },
+            });
+          },
+          () => {},
+          'อัปเดตลิงก์ไฟล์แนบลง Google Drive ไม่สำเร็จ'
+        );
+
+        attachmentMeta = {
+          fileName: manualName,
+          fileUrl: manualUrl,
+          mimeType: inferMimeTypeFromFileName(manualName),
+        };
       } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
         attachmentMeta = {
           fileName: doc.fileName || 'เอกสารแนบ',
@@ -1586,6 +1671,58 @@ export default function App() {
           fileUrl: uploadedUrl,
           fileSize: uploaded.fileSize,
           mimeType: uploaded.mimeType,
+        };
+      } else if (quickFilePayload.manualFileUrl?.trim()) {
+        const checked = validateAttachmentUrl(quickFilePayload.manualFileUrl);
+        if (!checked.valid) {
+          throw new Error(checked.error || 'ลิงก์ไฟล์แนบไม่ถูกต้อง');
+        }
+        const manualUrl = checked.normalizedUrl;
+        const manualName = resolveManualAttachmentName(
+          quickFilePayload.manualFileName || '',
+          manualUrl
+        );
+
+        const nextDocs = documents.map((d) =>
+          String(d.id) === String(doc.id)
+            ? {
+                ...d,
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                dueDate: quickFilePayload.dueDate,
+                fileName: manualName,
+                fileData: manualUrl,
+              }
+            : d
+        );
+        setDocuments(nextDocs);
+        saveDocsCache(nextDocs);
+        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
+        setDetailDoc(updatedDetail);
+
+        enqueueBackgroundWrite(
+          async () => {
+            await callDriveApi({
+              action: 'update',
+              id: doc.id,
+              type: doc.type,
+              updates: {
+                assignee: quickFilePayload.assignee,
+                status: quickFilePayload.status,
+                due_date: quickFilePayload.dueDate,
+                file_name: manualName,
+                file_url: manualUrl,
+              },
+            });
+          },
+          () => {},
+          'อัปเดตลิงก์ไฟล์แนบลง Google Drive ไม่สำเร็จ'
+        );
+
+        attachmentMeta = {
+          fileName: manualName,
+          fileUrl: manualUrl,
+          mimeType: inferMimeTypeFromFileName(manualName),
         };
       } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
         attachmentMeta = {
