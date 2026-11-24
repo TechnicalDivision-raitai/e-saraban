@@ -19,7 +19,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SarabanProcurementSyncRecord } from '../services/procurementSyncApi';
-import { formatProcurementDisplayTitle } from '../services/procurementSyncApi';
+import {
+  formatProcurementDisplayTitle,
+  getProcurementQueueStatusMeta,
+} from '../services/procurementSyncApi';
 import type { SarabanProjectSyncRecord } from '../services/projectSyncApi';
 import { getQueueStatusMeta } from '../services/projectSyncApi';
 import type { DocType, SarabanDoc, SortState, TabId, UserSession } from '../types/saraban';
@@ -388,10 +391,14 @@ export function RegisterTableView({
         })()}
 
         {procRec && (() => {
-          const statusMeta = getQueueStatusMeta(procRec.queueStatus);
+          const statusMeta = getProcurementQueueStatusMeta(procRec.queueStatus);
           const reasonText =
             statusMeta.status === 'rejected' && procRec.rejectReason
               ? ` (${procRec.rejectReason})`
+              : '';
+          const reviewerText =
+            statusMeta.status === 'approved' && procRec.reviewedBy
+              ? ` · ผู้ตรวจ: ${procRec.reviewedBy}`
               : '';
           return (
             <button
@@ -404,7 +411,8 @@ export function RegisterTableView({
                 name: procRec.procurementName,
                 projectCode: procRec.projectCode,
                 procurementId: procRec.procurementId,
-              })} · สถานะ: ${statusMeta.label}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/ลบคิว`}
+                fiscalYear: procRec.fiscalYear,
+              })} · สถานะ: ${statusMeta.label}${reviewerText}${reasonText} — คลิกเพื่อดูรายละเอียด/เช็คสถานะ/แก้ไขส่งใหม่`}
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums transition-colors ${statusMeta.badgeClass}`}
             >
               {statusMeta.status === 'approved' ? (
@@ -415,7 +423,7 @@ export function RegisterTableView({
                 <Clock className="w-3 h-3 shrink-0" />
               )}
               <span>
-                จัดซื้อฯ · {statusMeta.shortLabel}: {procRec.queueId}
+                {statusMeta.shortLabel}: {procRec.queueId}
               </span>
             </button>
           );

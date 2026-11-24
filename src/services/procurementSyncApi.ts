@@ -1,6 +1,10 @@
-import { normalizeDateToISO } from '../utils/sarabanUtils';
-import type { QueueStatusChangeEvent, SarabanAttachmentMeta, SarabanQueueStatus } from './projectSyncApi';
-import { getQueueStatusMeta, inferMimeTypeFromFileName } from './projectSyncApi';
+import { getTodayISO, normalizeDateToISO } from '../utils/sarabanUtils';
+import type {
+  QueueStatusChangeEvent,
+  SarabanAttachmentMeta,
+  SarabanQueueStatus,
+} from './projectSyncApi';
+import { inferMimeTypeFromFileName } from './projectSyncApi';
 
 export const PROCUREMENT_SYNC_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbxSQAaWvVcrjEEnYUFnX3A8t4DBKS1m5fdfFZ8y7qJK1b75urBE7Dlcxi_OZEuYzT3m/exec';
@@ -25,23 +29,23 @@ export interface ProcurementCategoryMeta {
 export const PROCUREMENT_DOC_CATEGORIES: ProcurementCategoryMeta[] = [
   {
     value: 'general_approval',
-    label: '1. ขออนุมัติ (ข้อมูลทั่วไป - ส่งเฉพาะไฟล์แนบ)',
-    hint: 'เชื่อมไปยังหน้าข้อมูลทั่วไป โดยส่งเฉพาะไฟล์แนบเท่านั้น เพื่อไม่ให้ข้อความไปกระทบรายการตั้งต้นโครงการ',
+    label: '1. ขออนุมัติโครงการ (general_approval)',
+    hint: 'เชื่อมโยงขั้นตอนการขออนุมัติโครงการ ส่งเลขที่บันทึก วันที่ขออนุมัติ ไฟล์แนบ และผู้รับผิดชอบ (ช่องที่เว้นว่างจะไม่ทับข้อมูลเดิม)',
   },
   {
     value: 'tor_order',
-    label: '2. แต่งตั้งผู้รับผิดชอบ TOR และราคากลาง',
-    hint: 'ส่งเลขที่คำสั่ง วันที่คำสั่ง และผู้รับผิดชอบ (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
+    label: '2. คำสั่งแต่งตั้งผู้รับผิดชอบ TOR และราคากลาง',
+    hint: 'ส่งเลขที่คำสั่ง วันที่คำสั่ง ผู้รับผิดชอบ/กรรมการ และหมายเหตุ (ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
   {
     value: 'tor_approval',
     label: '3. จัดทำ TOR และราคากลาง',
-    hint: 'ส่งวงเงินราคากลาง ไม่ต้องระบุผู้จัดทำเนื่องจากอ้างอิงตามคำสั่ง (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
+    hint: 'ส่งวงเงินราคากลาง ชื่อผู้จัดทำ TOR และรายละเอียดเพิ่มเติม (ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
   {
     value: 'disbursement',
     label: '4. ฎีกาเบิกจ่ายเงิน',
-    hint: 'ส่งงวดที่ จำนวนเงิน สถานะ และเลขที่ฎีกา (ไม่บังคับกรอก ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
+    hint: 'ส่งงวดที่ จำนวนเงิน สถานะเบิกจ่าย และเลขที่ฎีกา (ช่องที่เว้นว่างจะยึดตามระบบปลายทาง)',
   },
 ];
 
@@ -52,7 +56,7 @@ export function getProcurementCategoryLabel(category?: string): string {
   return (
     PROCUREMENT_DOC_CATEGORIES.find((c) => c.value === category)?.label ||
     category ||
-    '1. ขออนุมัติ (ข้อมูลทั่วไป - ส่งเฉพาะไฟล์แนบ)'
+    '1. ขออนุมัติโครงการ (general_approval)'
   );
 }
 
@@ -65,13 +69,32 @@ export interface ProcurementOption {
   statusLabel: string;
   method: string;
   budget: number;
+  responsibleName?: string;
+  startDate?: string;
+  approvalDocNo?: string;
+  budgetPoolId?: string;
+  budgetPoolName?: string;
+  planName?: string;
+  workName?: string;
+  budgetType?: string;
+  expenseCategory?: string;
+  expenseSubCategory?: string;
 }
 
 export interface ProcurementSyncCategoryFields {
+  // general_approval
+  approvalDate?: string;
+  responsibleName?: string;
+  notes?: string;
+  // tor_order
   orderNo?: string;
   orderDate?: string;
   assigneeName?: string;
+  // tor_approval
   refPrice?: string;
+  torAuthor?: string;
+  details?: string;
+  // disbursement
   installment?: string;
   amount?: string;
   status?: '' | 'pending' | 'paid';
@@ -164,11 +187,15 @@ export function formatProcurementDisplayTitle(params: {
   name: string;
   projectCode?: string;
   procurementId?: string;
+  statusLabel?: string;
   fiscalYear?: number;
 }): string {
   const code = getProcurementDisplayCode(params.projectCode, params.procurementId);
-  const yearPart = params.fiscalYear && params.fiscalYear > 0 ? ` · ปี ${params.fiscalYear}` : '';
-  return code ? `[${code}] ${params.name}${yearPart}` : `${params.name}${yearPart}`;
+  const statusPart = params.statusLabel?.trim() ? ` (${params.statusLabel.trim()})` : '';
+  const yearPart =
+    params.fiscalYear && params.fiscalYear > 0 ? ` · ปีงบฯ ${params.fiscalYear}` : '';
+  const prefix = code ? `[${code}] ` : '';
+  return `${prefix}${params.name}${statusPart}${yearPart}`;
 }
 
 function isPreviewHost(): boolean {
@@ -186,8 +213,8 @@ function getEndpoints(queryString = ''): { url: string; useProxyHeader: boolean 
 
   if (isPreviewHost()) {
     return [
-      { url: proxyUrl, useProxyHeader: true },
       { url: directUrl, useProxyHeader: false },
+      { url: proxyUrl, useProxyHeader: true },
     ];
   }
   return [{ url: directUrl, useProxyHeader: false }];
@@ -253,6 +280,16 @@ function normalizeProcurementOption(raw: Record<string, unknown>): ProcurementOp
     statusLabel: String(raw.statusLabel || raw.status || '').trim(),
     method: String(raw.method || '').trim(),
     budget: Number(raw.budget || 0) || 0,
+    responsibleName: String(raw.responsibleName || '').trim() || undefined,
+    startDate: String(raw.startDate || '').trim() || undefined,
+    approvalDocNo: String(raw.approvalDocNo || '').trim() || undefined,
+    budgetPoolId: String(raw.budgetPoolId || '').trim() || undefined,
+    budgetPoolName: String(raw.budgetPoolName || '').trim() || undefined,
+    planName: String(raw.planName || '').trim() || undefined,
+    workName: String(raw.workName || '').trim() || undefined,
+    budgetType: String(raw.budgetType || '').trim() || undefined,
+    expenseCategory: String(raw.expenseCategory || '').trim() || undefined,
+    expenseSubCategory: String(raw.expenseSubCategory || '').trim() || undefined,
   };
 }
 
@@ -268,15 +305,20 @@ export async function fetchProcurementOptions(
   for (const endpoint of endpoints) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     try {
-      const headers: Record<string, string> = {};
-      if (endpoint.useProxyHeader) {
-        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
-      }
-      const response = await fetchWithTimeout(
-        endpoint.url,
-        { method: 'GET', headers, redirect: 'follow', signal },
-        15000
-      );
+      const fetchInit: RequestInit = endpoint.useProxyHeader
+        ? {
+            method: 'GET',
+            headers: { 'x-apps-script-url': PROCUREMENT_SYNC_SCRIPT_URL },
+            redirect: 'follow',
+            signal,
+          }
+        : {
+            method: 'GET',
+            redirect: 'follow',
+            signal,
+          };
+
+      const response = await fetchWithTimeout(endpoint.url, fetchInit, 15000);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -287,7 +329,7 @@ export async function fetchProcurementOptions(
         data?: Record<string, unknown>[];
       };
       if (!parsed || parsed.status !== 'success' || !Array.isArray(parsed.data)) {
-        throw new Error(parsed?.message || 'ไม่สามารถโหลดรายชื่อรายการจัดซื้อจัดจ้างได้');
+        throw new Error(parsed?.message || 'ไม่สามารถโหลดรายชื่อโครงการจัดซื้อจัดจ้างได้');
       }
       return parsed.data
         .map(normalizeProcurementOption)
@@ -300,7 +342,7 @@ export async function fetchProcurementOptions(
 
   throw lastError instanceof Error
     ? lastError
-    : new Error('ไม่สามารถโหลดรายชื่อรายการจากระบบงานจัดซื้อจัดจ้างได้');
+    : new Error('ไม่สามารถโหลดรายชื่อโครงการจากระบบงานจัดซื้อจัดจ้างได้ กรุณาลองใหม่อีกครั้ง');
 }
 
 function toISOCEDate(value?: string): string {
@@ -314,7 +356,7 @@ function cleanOptionalText(value?: string): string {
 }
 
 function parseOptionalPositiveNumber(value?: string): number | undefined {
-  const trimmed = String(value ?? '').trim();
+  const trimmed = String(value ?? '').trim().replace(/,/g, '');
   if (!trimmed) return undefined;
   const num = Number(trimmed);
   return Number.isFinite(num) && num > 0 ? num : undefined;
@@ -332,26 +374,37 @@ export function buildProcurementCategoryPayload(
   fields: ProcurementSyncCategoryFields
 ): Record<string, unknown> {
   switch (docCategory) {
-    case 'general_approval':
+    case 'general_approval': {
+      const approvalDate = toISOCEDate(fields.approvalDate);
+      const responsibleName = cleanOptionalText(fields.responsibleName);
+      const notes = cleanOptionalText(fields.notes);
       return {
-        attachmentOnly: true,
-        targetSection: 'general_info',
+        ...(approvalDate ? { approvalDate } : {}),
+        ...(responsibleName ? { responsibleName } : {}),
+        ...(notes ? { notes } : {}),
       };
+    }
     case 'tor_order': {
       const orderNo = cleanOptionalText(fields.orderNo);
       const orderDate = toISOCEDate(fields.orderDate);
       const assigneeName = cleanOptionalText(fields.assigneeName);
+      const notes = cleanOptionalText(fields.notes);
       return {
         ...(orderNo ? { orderNo } : {}),
         ...(orderDate ? { orderDate } : {}),
         ...(assigneeName ? { assigneeName } : {}),
+        ...(notes ? { notes } : {}),
       };
     }
     case 'tor_approval':
     case 'ref_price': {
       const refPrice = parseOptionalPositiveNumber(fields.refPrice);
+      const torAuthor = cleanOptionalText(fields.torAuthor);
+      const details = cleanOptionalText(fields.details);
       return {
         ...(refPrice !== undefined ? { refPrice } : {}),
+        ...(torAuthor ? { torAuthor } : {}),
+        ...(details ? { details } : {}),
       };
     }
     case 'disbursement': {
@@ -362,8 +415,8 @@ export function buildProcurementCategoryPayload(
       return {
         ...(installment !== undefined ? { installment } : {}),
         ...(amount !== undefined ? { amount } : {}),
-        ...(status ? { status } : {}),
         ...(voucherNo ? { voucherNo } : {}),
+        ...(status ? { status } : {}),
       };
     }
   }
@@ -374,7 +427,7 @@ export function validateProcurementSyncSelection(
 ): string | null {
   if (!selection.enabled) return null;
   if (!selection.procurement) {
-    return 'กรุณาเลือกรายการจัดซื้อจัดจ้างที่ต้องการเชื่อมโยง';
+    return 'กรุณาเลือกโครงการจัดซื้อจัดจ้างที่ต้องการเชื่อมโยง';
   }
   return null;
 }
@@ -382,43 +435,42 @@ export function validateProcurementSyncSelection(
 export function buildProcurementIdempotencyKey(
   docId: string | number,
   docCategory: ProcurementDocCategory | string,
-  revision?: number
+  revision?: number,
+  timestamp?: number
 ): string {
   const rev = revision && revision > 0 ? revision : 0;
-  return rev > 0
-    ? `${String(docId)}:${docCategory}:r${rev}`
-    : `${String(docId)}:${docCategory}`;
+  const ts = typeof timestamp === 'number' && timestamp > 0 ? timestamp : Date.now();
+  return `${String(docId)}:${docCategory}:r${rev}:${ts}`;
 }
 
 export async function pushProcurementQueue(
   input: ProcurementQueuePushInput
 ): Promise<ProcurementQueuePushResponse> {
+  const normalizedCategory: ProcurementDocCategory =
+    input.docCategory === 'ref_price' ? 'tor_approval' : input.docCategory;
   const fiscalYearNum = Number(input.procurement.fiscalYear) || 0;
   const idempotencyKey = buildProcurementIdempotencyKey(
     input.docId,
-    input.docCategory,
-    input.idempotencyRevision
+    normalizedCategory,
+    input.idempotencyRevision,
+    Date.now()
   );
 
-  const isAttachmentOnly = input.docCategory === 'general_approval';
-  const outgoingBookNo = isAttachmentOnly
-    ? ''
-    : input.docCategory === 'tor_order'
-    ? cleanOptionalText(input.fields.orderNo)
-    : input.docCategory === 'disbursement'
-    ? cleanOptionalText(input.fields.voucherNo) || cleanOptionalText(input.bookNo)
-    : cleanOptionalText(input.bookNo);
+  const outgoingBookNo =
+    normalizedCategory === 'tor_order'
+      ? cleanOptionalText(input.fields.orderNo) || cleanOptionalText(input.bookNo)
+      : normalizedCategory === 'disbursement'
+      ? cleanOptionalText(input.fields.voucherNo) || cleanOptionalText(input.bookNo)
+      : cleanOptionalText(input.bookNo);
 
-  const outgoingBookDate = isAttachmentOnly
-    ? ''
-    : input.docCategory === 'tor_order'
-    ? toISOCEDate(input.fields.orderDate)
-    : toISOCEDate(input.bookDate);
+  const outgoingBookDate =
+    normalizedCategory === 'general_approval'
+      ? toISOCEDate(input.fields.approvalDate) || toISOCEDate(input.bookDate) || getTodayISO()
+      : normalizedCategory === 'tor_order'
+      ? toISOCEDate(input.fields.orderDate) || toISOCEDate(input.bookDate) || getTodayISO()
+      : toISOCEDate(input.bookDate) || getTodayISO();
 
-  const outgoingSubject =
-    isAttachmentOnly || input.docCategory === 'tor_order'
-      ? ''
-      : cleanOptionalText(input.subject);
+  const outgoingSubject = cleanOptionalText(input.subject);
 
   const requestBody = {
     action: 'pushProcurementQueue',
@@ -426,11 +478,11 @@ export async function pushProcurementQueue(
     procurementId: input.procurement.id,
     projectCode: input.procurement.projectCode,
     fiscalYear: fiscalYearNum,
-    docCategory: input.docCategory,
+    docCategory: normalizedCategory,
     bookNo: outgoingBookNo,
     bookDate: outgoingBookDate,
     subject: outgoingSubject,
-    payload: buildProcurementCategoryPayload(input.docCategory, input.fields),
+    payload: buildProcurementCategoryPayload(normalizedCategory, input.fields),
     attachment: input.attachment
       ? {
           fileName: input.attachment.fileName,
@@ -442,7 +494,7 @@ export async function pushProcurementQueue(
             input.attachment.mimeType || inferMimeTypeFromFileName(input.attachment.fileName),
         }
       : null,
-    submittedBy: cleanOptionalText(input.submittedBy),
+    submittedBy: cleanOptionalText(input.submittedBy) || 'เจ้าหน้าที่สารบรรณ',
   };
 
   const endpoints = getEndpoints('');
@@ -477,7 +529,7 @@ export async function pushProcurementQueue(
       if (!parsed || parsed.status !== 'success') {
         throw new Error(parsed?.message || 'ส่งข้อมูลเข้าคิวระบบจัดซื้อจัดจ้างไม่สำเร็จ');
       }
-      return { ...parsed, idempotencyKey };
+      return { ...parsed, idempotencyKey: parsed.idempotencyKey || idempotencyKey };
     } catch (err) {
       lastError = err;
     }
@@ -485,7 +537,7 @@ export async function pushProcurementQueue(
 
   throw lastError instanceof Error
     ? lastError
-    : new Error('ไม่สามารถส่งข้อมูลไปยังระบบงานจัดซื้อจัดจ้างได้');
+    : new Error('ไม่สามารถส่งข้อมูลไปยังระบบงานจัดซื้อจัดจ้างได้ กรุณาตรวจสอบการเชื่อมต่อและลองใหม่');
 }
 
 export function loadProcurementSyncMap(): Record<string, SarabanProcurementSyncRecord> {
@@ -654,16 +706,20 @@ export async function fetchProcurementQueueStatuses(
   for (const endpoint of endpoints) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     try {
-      const headers: Record<string, string> = {};
-      if (endpoint.useProxyHeader) {
-        headers['x-apps-script-url'] = PROCUREMENT_SYNC_SCRIPT_URL;
-      }
+      const fetchInit: RequestInit = endpoint.useProxyHeader
+        ? {
+            method: 'GET',
+            headers: { 'x-apps-script-url': PROCUREMENT_SYNC_SCRIPT_URL },
+            redirect: 'follow',
+            signal,
+          }
+        : {
+            method: 'GET',
+            redirect: 'follow',
+            signal,
+          };
 
-      const response = await fetchWithTimeout(
-        endpoint.url,
-        { method: 'GET', headers, redirect: 'follow', signal },
-        20000
-      );
+      const response = await fetchWithTimeout(endpoint.url, fetchInit, 20000);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -692,7 +748,7 @@ export async function fetchProcurementQueueStatuses(
             procurementId: String(raw.procurementId || raw.projectId || '').trim(),
             projectCode: String(raw.projectCode || '').trim(),
             fiscalYear: Number(raw.fiscalYear) || undefined,
-            docCategory: String(raw.docCategory || 'tor_approval').trim(),
+            docCategory: String(raw.docCategory || 'general_approval').trim(),
             bookNo: String(raw.bookNo || '').trim(),
             bookDate: String(raw.bookDate || '').trim(),
             subject: String(raw.subject || '').trim(),
@@ -724,21 +780,40 @@ export async function fetchProcurementQueueStatuses(
 
 function parseIdempotencyKey(
   key: string
-): { docId: string; docCategory: string; revision: number } | null {
+): { docId: string; docCategory: string; revision: number; timestamp: number } | null {
   const trimmed = String(key || '').trim();
   if (!trimmed) return null;
-  const parts = trimmed.split(':');
-  if (parts.length < 2 || !parts[0]) return null;
-  let revision = 0;
-  if (parts[2]) {
-    const m = parts[2].match(/^r(\d+)$/i);
-    if (m) revision = Number(m[1]) || 0;
+
+  if (trimmed.includes(':')) {
+    const parts = trimmed.split(':');
+    if (parts.length < 2 || !parts[0]) return null;
+    let revision = 0;
+    if (parts[2]) {
+      const m = parts[2].match(/^r(\d+)$/i);
+      if (m) revision = Number(m[1]) || 0;
+    }
+    const ts = parts[3] ? Number(parts[3]) || 0 : 0;
+    return {
+      docId: parts[0],
+      docCategory: parts[1],
+      revision,
+      timestamp: ts,
+    };
   }
-  return {
-    docId: parts[0],
-    docCategory: parts[1],
-    revision,
-  };
+
+  const dashMatch = trimmed.match(
+    /^(.+?)-(general_approval|tor_order|tor_approval|ref_price|disbursement)(?:-r(\d+))?(?:-(\d+))?$/
+  );
+  if (dashMatch) {
+    return {
+      docId: dashMatch[1],
+      docCategory: dashMatch[2],
+      revision: dashMatch[3] ? Number(dashMatch[3]) || 0 : 0,
+      timestamp: dashMatch[4] ? Number(dashMatch[4]) || 0 : 0,
+    };
+  }
+
+  return null;
 }
 
 export function reconcileProcurementSyncMap(
@@ -789,7 +864,9 @@ export function reconcileProcurementSyncMap(
     if (!matchedDocId && parsedKey && nextMap[parsedKey.docId]) {
       const rec = nextMap[parsedKey.docId];
       const currentRev = getProcurementSyncRevision(parsedKey.docId);
-      if (!rec.queueId || parsedKey.revision >= currentRev) {
+      const recParsed = parseIdempotencyKey(rec.idempotencyKey || '');
+      const recRev = recParsed ? recParsed.revision : currentRev;
+      if (!rec.queueId || parsedKey.revision > recRev || (parsedKey.revision >= currentRev && !rec.idempotencyKey)) {
         matchedDocId = parsedKey.docId;
       }
     }
@@ -853,7 +930,7 @@ export function reconcileProcurementSyncMap(
       const shortCode = getProcurementDisplayCode(item.projectCode, item.procurementId);
       const procurementName =
         options.procurementNameById?.get(item.procurementId) ||
-        (shortCode ? `รายการจัดซื้อฯ ${shortCode}` : 'รายการจัดซื้อจัดจ้าง');
+        (shortCode ? `รายการจัดซื้อฯ ${shortCode}` : 'โครงการจัดซื้อจัดจ้าง');
 
       nextMap[parsedKey.docId] = {
         docId: parsedKey.docId,
@@ -864,7 +941,7 @@ export function reconcileProcurementSyncMap(
         projectCode: item.projectCode || '-',
         procurementName,
         fiscalYear: item.fiscalYear || 0,
-        docCategory: (item.docCategory as ProcurementDocCategory) || 'tor_approval',
+        docCategory: (item.docCategory as ProcurementDocCategory) || 'general_approval',
         bookNo: item.bookNo || '-',
         syncedAt: item.createdAt || nowIso,
         reviewedBy: item.reviewedBy || '',
@@ -900,4 +977,48 @@ export function reconcileProcurementSyncMap(
   };
 }
 
-export { getQueueStatusMeta };
+export function getProcurementQueueStatusMeta(queueStatus?: string): {
+  status: 'pending' | 'approved' | 'rejected';
+  label: string;
+  shortLabel: string;
+  badgeClass: string;
+  bannerClass: string;
+  titleTextClass: string;
+  subTextClass: string;
+} {
+  const normalized = String(queueStatus || 'pending').trim().toLowerCase();
+  if (normalized === 'approved') {
+    return {
+      status: 'approved',
+      label: 'จัดซื้อฯ รับเข้าโครงการแล้ว',
+      shortLabel: 'จัดซื้อฯ รับเข้าโครงการแล้ว',
+      badgeClass:
+        'border-[#22C55E] bg-[#DCFCE7] hover:bg-[#BBF7D0] text-[#14532D] shadow-[0_0_8px_rgba(34,197,94,0.25)]',
+      bannerClass: 'border-[#BBF7D0] bg-[#F0FDF4] text-[#14532D]',
+      titleTextClass: 'text-[#14532D]',
+      subTextClass: 'text-[#166534]',
+    };
+  }
+  if (normalized === 'rejected') {
+    return {
+      status: 'rejected',
+      label: 'ถูกส่งกลับ/ปฏิเสธ',
+      shortLabel: 'ถูกส่งกลับ/ปฏิเสธ',
+      badgeClass:
+        'border-[#EF4444] bg-[#FEE2E2] hover:bg-[#FECACA] text-[#991B1B] shadow-[0_0_8px_rgba(239,68,68,0.28)]',
+      bannerClass: 'border-[#FCA5A5] bg-[#FEF2F2] text-[#7F1D1D]',
+      titleTextClass: 'text-[#7F1D1D]',
+      subTextClass: 'text-[#991B1B]',
+    };
+  }
+  return {
+    status: 'pending',
+    label: 'รอจัดซื้อฯ ตรวจสอบ',
+    shortLabel: 'รอจัดซื้อฯ ตรวจสอบ',
+    badgeClass:
+      'border-[#F59E0B] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] shadow-[0_0_8px_rgba(245,158,11,0.25)]',
+    bannerClass: 'border-[#FCD34D] bg-[#FFFBEB] text-[#78350F]',
+    titleTextClass: 'text-[#78350F]',
+    subTextClass: 'text-[#92400E]',
+  };
+}

@@ -29,6 +29,7 @@ import {
   fetchProcurementOptions,
   fetchProcurementQueueStatuses,
   formatProcurementDisplayTitle,
+  getProcurementQueueStatusMeta,
   getProcurementSyncRevision,
   incrementProcurementSyncRevision,
   loadProcurementSyncMap,
@@ -451,7 +452,7 @@ export default function App() {
 
         if (reconciled.statusChanges.length === 1) {
           const change = reconciled.statusChanges[0];
-          const meta = getQueueStatusMeta(change.toStatus);
+          const meta = getProcurementQueueStatusMeta(change.toStatus);
           pushToast(
             meta.status === 'approved' ? 'success' : meta.status === 'rejected' ? 'error' : 'info',
             `อัปเดตสถานะจัดซื้อฯ ${change.queueId}: ${meta.shortLabel}`,
@@ -538,6 +539,44 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleFocusOrVisible);
     };
   }, [syncProjectQueueStatuses, syncProcurementQueueStatuses]);
+
+  const pendingProjectQueueCount = useMemo(
+    () =>
+      Object.values(projectSyncMap).filter(
+        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
+      ).length,
+    [projectSyncMap]
+  );
+
+  const pendingProcurementQueueCount = useMemo(
+    () =>
+      Object.values(procurementSyncMap).filter(
+        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
+      ).length,
+    [procurementSyncMap]
+  );
+
+  useEffect(() => {
+    if (pendingProjectQueueCount === 0 && pendingProcurementQueueCount === 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      if (documentsRef.current.length === 0) return;
+      if (pendingProjectQueueCount > 0) {
+        syncProjectQueueStatuses({ silent: true });
+      }
+      if (pendingProcurementQueueCount > 0) {
+        syncProcurementQueueStatuses({ silent: true });
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [
+    pendingProjectQueueCount,
+    pendingProcurementQueueCount,
+    syncProjectQueueStatuses,
+    syncProcurementQueueStatuses,
+  ]);
 
   const isAdmin = currentUser.role === 'admin' && currentUser.name === 'นิศาชล คงดี';
 
@@ -661,22 +700,6 @@ export default function App() {
     setWizardOpen(true);
   };
 
-  const pendingProjectQueueCount = useMemo(
-    () =>
-      Object.values(projectSyncMap).filter(
-        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
-      ).length,
-    [projectSyncMap]
-  );
-
-  const pendingProcurementQueueCount = useMemo(
-    () =>
-      Object.values(procurementSyncMap).filter(
-        (rec) => String(rec?.queueStatus || 'pending').trim().toLowerCase() === 'pending'
-      ).length,
-    [procurementSyncMap]
-  );
-
   const syncSarabanDocToProject = useCallback(
     async (params: {
       docId: string | number;
@@ -762,7 +785,11 @@ export default function App() {
         procurementSyncAbortRef.current = null;
       }
       const prevRecord = procurementSyncMapRef.current[String(params.docId)];
-      if (prevRecord && String(prevRecord.queueStatus || '').toLowerCase() === 'rejected') {
+      if (
+        prevRecord &&
+        (String(prevRecord.queueStatus || '').toLowerCase() === 'rejected' ||
+          prevRecord.docCategory !== params.selection.docCategory)
+      ) {
         markProcurementQueueAsDeleted(prevRecord);
         incrementProcurementSyncRevision(params.docId);
       }
@@ -808,6 +835,8 @@ export default function App() {
           name: params.selection.procurement.name,
           projectCode: params.selection.procurement.projectCode,
           procurementId: params.selection.procurement.id,
+          statusLabel: params.selection.procurement.statusLabel,
+          fiscalYear: params.selection.procurement.fiscalYear,
         })
       );
       return record;

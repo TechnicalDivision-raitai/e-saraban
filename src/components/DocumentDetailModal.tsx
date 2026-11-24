@@ -22,7 +22,10 @@ import type {
   ProcurementSyncSelection,
   SarabanProcurementSyncRecord,
 } from '../services/procurementSyncApi';
-import { validateProcurementSyncSelection } from '../services/procurementSyncApi';
+import {
+  getProcurementQueueStatusMeta,
+  validateProcurementSyncSelection,
+} from '../services/procurementSyncApi';
 import type {
   ProjectDocCategory,
   ProjectSyncSelection,
@@ -34,6 +37,7 @@ import { WORKFLOW_STATUSES } from '../types/saraban';
 import {
   formatRegDisplay,
   formatThaiDate,
+  normalizeDateToISO,
   normalizeWhitespace,
   resolveManualAttachmentName,
   validateAttachmentUrl,
@@ -137,7 +141,17 @@ function buildInitialProcurementSync(
   const cleanOrderNo =
     doc?.type === 'orders' && doc.docNumber && doc.docNumber !== '-' ? String(doc.docNumber) : '';
   const cleanOrderDate =
-    doc?.type === 'orders' && doc.docDate && doc.docDate !== '-' ? String(doc.docDate) : '';
+    doc?.type === 'orders' && doc.docDate && doc.docDate !== '-'
+      ? normalizeDateToISO(doc.docDate)
+      : '';
+  const cleanApprovalDate =
+    doc?.docDate && doc.docDate !== '-'
+      ? normalizeDateToISO(doc.docDate)
+      : doc?.receiveDate && doc.receiveDate !== '-'
+      ? normalizeDateToISO(doc.receiveDate)
+      : '';
+  const cleanAssignee =
+    doc?.assignee && doc.assignee !== '-' ? normalizeWhitespace(doc.assignee) : '';
   const cleanVoucherNo =
     doc?.type === 'vouchers' && doc.voucherNo && doc.voucherNo !== '-' ? String(doc.voucherNo) : '';
 
@@ -164,8 +178,11 @@ function buildInitialProcurementSync(
         ? 'tor_approval'
         : existingSync?.docCategory || defaultCategory,
     fields: {
+      ...(cleanApprovalDate ? { approvalDate: cleanApprovalDate } : {}),
+      ...(cleanAssignee ? { responsibleName: cleanAssignee } : {}),
       ...(cleanOrderNo ? { orderNo: cleanOrderNo } : {}),
       ...(cleanOrderDate ? { orderDate: cleanOrderDate } : {}),
+      ...(doc?.type === 'orders' && cleanAssignee ? { assigneeName: cleanAssignee } : {}),
       ...(doc?.type === 'vouchers' && doc.voucherAmount && Number(doc.voucherAmount) > 0
         ? { amount: String(doc.voucherAmount) }
         : {}),
@@ -468,7 +485,9 @@ export function DocumentDetailModal({
                 );
               })()}
               {existingProcurementSync && (() => {
-                const statusMeta = getQueueStatusMeta(existingProcurementSync.queueStatus);
+                const statusMeta = getProcurementQueueStatusMeta(
+                  existingProcurementSync.queueStatus
+                );
                 return (
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold tabular-nums whitespace-nowrap ${statusMeta.badgeClass}`}
@@ -481,7 +500,7 @@ export function DocumentDetailModal({
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                     )}
                     <span>
-                      จัดซื้อฯ · {statusMeta.shortLabel}: {existingProcurementSync.queueId}
+                      {statusMeta.shortLabel}: {existingProcurementSync.queueId}
                     </span>
                   </span>
                 );

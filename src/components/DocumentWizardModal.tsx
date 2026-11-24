@@ -199,7 +199,9 @@ export function DocumentWizardModal({
     voucherAmt = '',
     voucherNoStr = '',
     orderNoStr = '',
-    orderDateStr = ''
+    orderDateStr = '',
+    docDateStr = '',
+    assigneeStr = ''
   ): ProcurementSyncSelection => {
     const defaultCategory: ProcurementDocCategory =
       targetType === 'vouchers'
@@ -211,7 +213,13 @@ export function DocumentWizardModal({
     const cleanOrderNo =
       targetType === 'orders' && orderNoStr && orderNoStr !== '-' ? orderNoStr : '';
     const cleanOrderDate =
-      targetType === 'orders' && orderDateStr && orderDateStr !== '-' ? orderDateStr : '';
+      targetType === 'orders' && orderDateStr && orderDateStr !== '-'
+        ? normalizeDateToISO(orderDateStr)
+        : '';
+    const cleanApprovalDate =
+      docDateStr && docDateStr !== '-' ? normalizeDateToISO(docDateStr) : '';
+    const cleanAssignee =
+      assigneeStr && assigneeStr !== '-' ? normalizeWhitespace(assigneeStr) : '';
 
     return {
       enabled: false,
@@ -219,8 +227,11 @@ export function DocumentWizardModal({
       procurement: null,
       docCategory: defaultCategory,
       fields: {
+        ...(cleanApprovalDate ? { approvalDate: cleanApprovalDate } : {}),
+        ...(cleanAssignee ? { responsibleName: cleanAssignee } : {}),
         ...(cleanOrderNo ? { orderNo: cleanOrderNo } : {}),
         ...(cleanOrderDate ? { orderDate: cleanOrderDate } : {}),
+        ...(targetType === 'orders' && cleanAssignee ? { assigneeName: cleanAssignee } : {}),
         ...(voucherAmt && Number(voucherAmt) > 0 ? { amount: voucherAmt } : {}),
         ...(cleanVoucherNo ? { voucherNo: cleanVoucherNo } : {}),
       },
@@ -291,7 +302,9 @@ export function DocumentWizardModal({
         editingDoc.voucherAmount ? String(editingDoc.voucherAmount) : '',
         editingDoc.voucherNo || '',
         editingDoc.docNumber || '',
-        editingDoc.docDate || ''
+        editingDoc.docDate || '',
+        editingDoc.docDate || editingDoc.receiveDate || '',
+        editingDoc.assignee || ''
       );
       if (existingProcRecord) {
         baseProcSync.docCategory =
@@ -341,7 +354,9 @@ export function DocumentWizardModal({
       setVoucherAmount('');
       setVoucherProject('');
       setProjectSync(createDefaultProjectSync('incoming'));
-      setProcurementSync(createDefaultProcurementSync('incoming'));
+      setProcurementSync(
+        createDefaultProcurementSync('incoming', '', '', '', '', todayISO, 'นิศาชล คงดี')
+      );
     }
   }, [isOpen, editingDoc]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -634,7 +649,15 @@ export function DocumentWizardModal({
       }
       setProjectSync(createDefaultProjectSync(nextType, voucherAmount));
       setProcurementSync(
-        createDefaultProcurementSync(nextType, voucherAmount, voucherNo, docNumber, docDate)
+        createDefaultProcurementSync(
+          nextType,
+          voucherAmount,
+          voucherNo,
+          docNumber,
+          docDate,
+          docDate || getTodayISO(),
+          assignee
+        )
       );
     }
   };
