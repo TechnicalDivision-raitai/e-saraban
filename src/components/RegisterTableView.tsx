@@ -36,6 +36,7 @@ import {
   getCurrentBuddhistYear,
   getCurrentFiscalYear,
   getCurrentYearForType,
+  getDocAttachments,
   getInboxDate,
   getInboxDateSortValue,
   getOrderedStatuses,
@@ -432,24 +433,47 @@ export function RegisterTableView({
     );
   };
 
-  const renderAttachmentCell = (doc: SarabanDoc) => (
-    <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-      {doc.fileData && doc.fileData.trim() !== '' ? (
-        <a
-          href={doc.fileData}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={doc.fileName || 'เปิดดูไฟล์แนบ'}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#C9C4DC] bg-[#F1EFF7] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
-        >
-          <Paperclip className="w-3.5 h-3.5" />
-          <span>เปิดไฟล์</span>
-        </a>
-      ) : (
-        <span className="text-slate-300 text-xs">—</span>
-      )}
-    </td>
-  );
+  const renderAttachmentCell = (doc: SarabanDoc) => {
+    const attachments = getDocAttachments(doc);
+    return (
+      <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+        {attachments.length === 0 ? (
+          <span className="text-slate-300 text-xs">—</span>
+        ) : attachments.length === 1 ? (
+          <a
+            href={attachments[0].fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={attachments[0].fileName || 'เปิดดูไฟล์แนบ'}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#C9C4DC] bg-[#F1EFF7] hover:bg-[#6B6293] text-[#242038] hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+            <span>เปิดไฟล์</span>
+          </a>
+        ) : (
+          <div className="inline-flex flex-col items-center gap-1 max-w-[180px]">
+            {attachments.map((att, idx) => (
+              <a
+                key={`${att.fileUrl}-${idx}`}
+                href={att.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={att.fileName || `ไฟล์แนบ ${idx + 1}`}
+                className="w-full inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border border-[#C9C4DC] bg-[#F1EFF7] hover:bg-[#6B6293] text-[#242038] hover:text-white text-[11px] font-semibold transition-colors"
+              >
+                <Paperclip className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[135px]">
+                  {att.fileName && att.fileName !== 'ไฟล์แนบ'
+                    ? `${idx + 1}. ${att.fileName}`
+                    : `ไฟล์ที่ ${idx + 1}`}
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
+      </td>
+    );
+  };
 
   const renderActionCell = (doc: SarabanDoc) => (
     <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>

@@ -33,6 +33,11 @@ export interface UserSession {
   roleName: string;
 }
 
+export interface DocAttachment {
+  fileName: string;
+  fileUrl: string;
+}
+
 export interface SarabanDoc {
   id: string | number;
   type: DocType | string;
@@ -52,6 +57,7 @@ export interface SarabanDoc {
   ackTime: string;
   fileName: string;
   fileData: string;
+  attachments?: DocAttachment[];
   memoWork: string;
   formCode: string;
   formName: string;

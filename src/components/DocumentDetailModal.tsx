@@ -32,11 +32,14 @@ import type {
   SarabanProjectSyncRecord,
 } from '../services/projectSyncApi';
 import { getQueueStatusMeta, validateProjectSyncSelection } from '../services/projectSyncApi';
-import type { SarabanDoc } from '../types/saraban';
+import type { DocAttachment, SarabanDoc } from '../types/saraban';
 import { WORKFLOW_STATUSES } from '../types/saraban';
 import {
+  formatFileSizeLabel,
   formatRegDisplay,
   formatThaiDate,
+  getDocAttachments,
+  mergeDocAttachments,
   normalizeDateToISO,
   normalizeWhitespace,
   resolveManualAttachmentName,
@@ -52,10 +55,9 @@ export interface QuickDetailSavePayload {
   assignee: string;
   status: string;
   dueDate: string;
-  selectedFile: File | null;
-  manualFileUrl?: string;
-  manualFileName?: string;
-  removeExistingAttachment: boolean;
+  keptExistingAttachments: DocAttachment[];
+  selectedFiles: File[];
+  manualAttachments: DocAttachment[];
 }
 
 interface DocumentDetailModalProps {
@@ -220,11 +222,12 @@ export function DocumentDetailModal({
   const [status, setStatus] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [attachmentMode, setAttachmentMode] = useState<'upload' | 'url'>('upload');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [keptExistingAttachments, setKeptExistingAttachments] = useState<DocAttachment[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [manualAttachments, setManualAttachments] = useState<DocAttachment[]>([]);
   const [manualFileUrl, setManualFileUrl] = useState('');
   const [manualFileName, setManualFileName] = useState('');
   const [attachmentUrlError, setAttachmentUrlError] = useState('');
-  const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false);
   const [projectSync, setProjectSync] = useState<ProjectSyncSelection>(() =>
     buildInitialProjectSync(doc, existingProjectSync)
   );
@@ -233,7 +236,7 @@ export function DocumentDetailModal({
     buildInitialProcurementSync(doc, existingProcurementSync)
   );
   const [procurementPushError, setProcurementPushError] = useState('');
-  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   const copyTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -250,12 +253,13 @@ export function DocumentDetailModal({
     setStatus(doc.status || 'ลงรับแล้ว');
     setDueDate(doc.dueDate && doc.dueDate !== '-' ? doc.dueDate : '');
     setAttachmentMode('upload');
-    setSelectedFile(null);
+    setKeptExistingAttachments(getDocAttachments(doc));
+    setSelectedFiles([]);
+    setManualAttachments([]);
     setManualFileUrl('');
     setManualFileName('');
     setAttachmentUrlError('');
-    setRemoveExistingAttachment(false);
-    setCopiedLink(false);
+    setCopiedLinkKey(null);
     if (copyTimerRef.current) {
       window.clearTimeout(copyTimerRef.current);
       copyTimerRef.current = null;
@@ -288,33 +292,69 @@ export function DocumentDetailModal({
 
   if (!doc) return null;
 
-  const hasExistingAttachment = Boolean(doc.fileData && doc.fileData.trim() !== '');
+  const originalAttachments = getDocAttachments(doc);
+  const keptUrlSet = new Set(keptExistingAttachments.map((a) => a.fileUrl));
   const manualUrlValidation = validateAttachmentUrl(manualFileUrl);
-  const hasManualUrlInput = attachmentMode === 'url' && manualFileUrl.trim() !== '';
-  const hasActiveUploadFile = attachmentMode === 'upload' && selectedFile !== null;
+  const hasManualUrlInput = manualFileUrl.trim() !== '';
+
+  const getCombinedManualAttachments = (): DocAttachment[] => {
+    if (hasManualUrlInput && manualUrlValidation.valid && manualUrlValidation.normalizedUrl) {
+      return mergeDocAttachments(manualAttachments, [
+        {
+          fileName: resolveManualAttachmentName(
+            manualFileName,
+            manualUrlValidation.normalizedUrl
+          ),
+          fileUrl: manualUrlValidation.normalizedUrl,
+        },
+      ]);
+    }
+    return manualAttachments;
+  };
+
+  const handleAddManualAttachment = () => {
+    if (!hasManualUrlInput) return;
+    if (!manualUrlValidation.valid || !manualUrlValidation.normalizedUrl) {
+      setAttachmentUrlError(manualUrlValidation.error || 'กรุณาตรวจสอบลิงก์ URL ไฟล์แนบ');
+      return;
+    }
+    setAttachmentUrlError('');
+    setManualAttachments((prev) =>
+      mergeDocAttachments(prev, [
+        {
+          fileName: resolveManualAttachmentName(
+            manualFileName,
+            manualUrlValidation.normalizedUrl
+          ),
+          fileUrl: manualUrlValidation.normalizedUrl,
+        },
+      ])
+    );
+    setManualFileUrl('');
+    setManualFileName('');
+  };
+
+  const hasPendingAttachmentChanges =
+    keptExistingAttachments.length !== originalAttachments.length ||
+    selectedFiles.length > 0 ||
+    manualAttachments.length > 0 ||
+    hasManualUrlInput;
+
   const hasPendingChanges =
     normalizeWhitespace(assignee) !== normalizeWhitespace(doc.assignee || 'นิศาชล คงดี') ||
     status !== (doc.status || 'ลงรับแล้ว') ||
     dueDate !== (doc.dueDate && doc.dueDate !== '-' ? doc.dueDate : '') ||
-    hasActiveUploadFile ||
-    hasManualUrlInput ||
-    removeExistingAttachment;
+    hasPendingAttachmentChanges;
 
-  const buildQuickPayload = (): QuickDetailSavePayload => {
-    const useManualUrl = attachmentMode === 'url' && Boolean(manualUrlValidation.normalizedUrl);
-    return {
-      id: doc.id,
-      assignee: normalizeWhitespace(assignee) || 'นิศาชล คงดี',
-      status,
-      dueDate,
-      selectedFile: attachmentMode === 'upload' ? selectedFile : null,
-      manualFileUrl: useManualUrl ? manualUrlValidation.normalizedUrl : '',
-      manualFileName: useManualUrl
-        ? resolveManualAttachmentName(manualFileName, manualUrlValidation.normalizedUrl)
-        : '',
-      removeExistingAttachment,
-    };
-  };
+  const buildQuickPayload = (): QuickDetailSavePayload => ({
+    id: doc.id,
+    assignee: normalizeWhitespace(assignee) || 'นิศาชล คงดี',
+    status,
+    dueDate,
+    keptExistingAttachments,
+    selectedFiles,
+    manualAttachments: getCombinedManualAttachments(),
+  });
 
   const handleSaveDetails = async () => {
     if (hasManualUrlInput && !manualUrlValidation.valid) {
@@ -325,8 +365,8 @@ export function DocumentDetailModal({
     await onQuickSave(buildQuickPayload());
   };
 
-  const handleCopyAttachmentLink = async () => {
-    const url = String(doc.fileData || '').trim();
+  const handleCopyAttachmentLink = async (rawUrl: string) => {
+    const url = String(rawUrl || '').trim();
     if (!url) return;
 
     let copied = false;
@@ -358,12 +398,12 @@ export function DocumentDetailModal({
     }
 
     if (copied) {
-      setCopiedLink(true);
+      setCopiedLinkKey(url);
       if (copyTimerRef.current) {
         window.clearTimeout(copyTimerRef.current);
       }
       copyTimerRef.current = window.setTimeout(() => {
-        setCopiedLink(false);
+        setCopiedLinkKey(null);
         copyTimerRef.current = null;
       }, 2200);
     }
@@ -694,88 +734,109 @@ export function DocumentDetailModal({
               )}
 
               <div className="space-y-2.5">
-                {hasExistingAttachment &&
-                  !removeExistingAttachment &&
-                  !hasActiveUploadFile &&
-                  !hasManualUrlInput && (
-                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E5E2F0]">
-                      <a
-                        href={doc.fileData}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-semibold text-[#574F7D] hover:underline flex items-center gap-2 min-w-0 flex-1"
-                      >
-                        <Paperclip className="w-4 h-4 shrink-0" />
-                        <span className="truncate">
-                          ไฟล์แนบปัจจุบัน: {doc.fileName || 'เปิดดูไฟล์ใน Drive'}
-                        </span>
-                      </a>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={handleCopyAttachmentLink}
-                          title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
-                          className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
-                            copiedLink
-                              ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
-                              : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
-                          }`}
-                        >
-                          {copiedLink ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>คัดลอกแล้ว</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>คัดลอกลิงก์</span>
-                            </>
-                          )}
-                        </button>
-                        <a
-                          href={doc.fileData}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-2.5 py-1.5 rounded-lg bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>เปิดดู</span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => setRemoveExistingAttachment(true)}
-                          className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>นำออก</span>
-                        </button>
-                      </div>
+                {originalAttachments.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-bold text-[#242038]">
+                      ไฟล์แนบปัจจุบัน ({keptExistingAttachments.length}/{originalAttachments.length} ไฟล์)
                     </div>
-                  )}
+                    {originalAttachments.map((att, idx) => {
+                      const isKept = keptUrlSet.has(att.fileUrl);
+                      const isCopied = copiedLinkKey === att.fileUrl;
+                      if (!isKept) {
+                        return (
+                          <div
+                            key={`${att.fileUrl}-${idx}`}
+                            className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]"
+                          >
+                            <span className="text-xs font-semibold text-[#78350F] truncate">
+                              ไฟล์ “{att.fileName}” จะถูกนำออกเมื่อกดบันทึก
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setKeptExistingAttachments((prev) =>
+                                  mergeDocAttachments(prev, [att])
+                                )
+                              }
+                              className="px-2.5 py-1 rounded-lg bg-white border border-[#F59E0B] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>คืนค่า</span>
+                            </button>
+                          </div>
+                        );
+                      }
 
-                {hasExistingAttachment &&
-                  removeExistingAttachment &&
-                  !hasActiveUploadFile &&
-                  !hasManualUrlInput && (
-                    <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]">
-                      <span className="text-xs font-semibold text-[#78350F]">
-                        ไฟล์แนบเดิมจะถูกนำออกเมื่อกดบันทึก
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setRemoveExistingAttachment(false)}
-                        className="px-2.5 py-1 rounded-lg bg-white border border-[#F59E0B] text-[#78350F] text-xs font-semibold inline-flex items-center gap-1 shrink-0"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>ยกเลิก</span>
-                      </button>
-                    </div>
-                  )}
+                      return (
+                        <div
+                          key={`${att.fileUrl}-${idx}`}
+                          className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E5E2F0]"
+                        >
+                          <a
+                            href={att.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-semibold text-[#574F7D] hover:underline flex items-center gap-2 min-w-0 flex-1"
+                          >
+                            <Paperclip className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                              {idx + 1}. {att.fileName || 'เปิดดูไฟล์ใน Drive'}
+                            </span>
+                          </a>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAttachmentLink(att.fileUrl)}
+                              title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
+                              className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
+                                isCopied
+                                  ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
+                                  : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
+                              }`}
+                            >
+                              {isCopied ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>คัดลอกแล้ว</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>คัดลอกลิงก์</span>
+                                </>
+                              )}
+                            </button>
+                            <a
+                              href={att.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1.5 rounded-lg bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>เปิดดู</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setKeptExistingAttachments((prev) =>
+                                  prev.filter((item) => item.fileUrl !== att.fileUrl)
+                                )
+                              }
+                              className="px-2.5 py-1.5 rounded-lg bg-[#FEE2E2] hover:bg-[#DC2626] text-[#991B1B] hover:text-white border border-[#FCA5A5] text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>นำออก</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                   <span className="text-xs font-bold text-[#242038]">
-                    {hasExistingAttachment ? 'เปลี่ยน / แนบไฟล์ใหม่' : 'แนบไฟล์เอกสาร'}
+                    {originalAttachments.length > 0 ? 'เพิ่มไฟล์แนบ (คงไฟล์เดิมไว้)' : 'แนบไฟล์เอกสาร'}
                   </span>
                   <div
                     role="tablist"
@@ -823,48 +884,75 @@ export function DocumentDetailModal({
                   <>
                     <input
                       type="file"
+                      multiple
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
                       onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setSelectedFile(file);
-                        if (file) {
-                          setManualFileUrl('');
-                          setManualFileName('');
+                        const picked = Array.from(e.target.files || []);
+                        if (picked.length > 0) {
+                          setSelectedFiles((prev) => {
+                            const seen = new Set(
+                              prev.map((f) => `${f.name}|${f.size}|${f.lastModified}`)
+                            );
+                            const next = [...prev];
+                            picked.forEach((f) => {
+                              const key = `${f.name}|${f.size}|${f.lastModified}`;
+                              if (!seen.has(key)) {
+                                seen.add(key);
+                                next.push(f);
+                              }
+                            });
+                            return next;
+                          });
                           setAttachmentUrlError('');
                         }
+                        e.target.value = '';
                       }}
                       className="block w-full text-xs text-slate-700 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#6B6293] file:text-white hover:file:bg-[#574F7D] bg-white rounded-xl border border-[#C9C4DC] p-1.5"
                     />
 
-                    {selectedFile && (
-                      <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex items-center justify-between">
-                        <span className="truncate">
-                          ไฟล์ใหม่ที่จะอัปโหลด: {selectedFile.name} (
-                          {(selectedFile.size / 1024).toFixed(1)} KB)
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFile(null)}
-                          className="text-[#7F1D1D] underline ml-2 shrink-0"
-                        >
-                          ล้างไฟล์
-                        </button>
+                    {selectedFiles.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-bold text-[#14532D]">
+                          <span>ไฟล์ใหม่ที่จะอัปโหลดเพิ่ม ({selectedFiles.length} ไฟล์)</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFiles([])}
+                            className="text-[#7F1D1D] underline font-semibold"
+                          >
+                            ล้างไฟล์ทั้งหมด
+                          </button>
+                        </div>
+                        {selectedFiles.map((file, idx) => (
+                          <div
+                            key={`${file.name}-${file.size}-${file.lastModified}`}
+                            className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate">
+                              {idx + 1}. {file.name} ({formatFileSizeLabel(file.size)})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedFiles((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              className="text-[#7F1D1D] hover:underline shrink-0"
+                            >
+                              นำออก
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </>
                 ) : (
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                      <div className="sm:col-span-7">
+                      <div className="sm:col-span-6">
                         <input
                           type="url"
                           value={manualFileUrl}
                           onChange={(e) => {
-                            const next = e.target.value;
-                            setManualFileUrl(next);
-                            if (next.trim()) {
-                              setSelectedFile(null);
-                            }
+                            setManualFileUrl(e.target.value);
                             if (attachmentUrlError) setAttachmentUrlError('');
                           }}
                           placeholder="วางลิงก์ URL เช่น https://drive.google.com/file/d/..."
@@ -875,14 +963,24 @@ export function DocumentDetailModal({
                           }`}
                         />
                       </div>
-                      <div className="sm:col-span-5">
+                      <div className="sm:col-span-4">
                         <input
                           type="text"
                           value={manualFileName}
                           onChange={(e) => setManualFileName(e.target.value)}
-                          placeholder="ชื่อไฟล์ที่แสดง (ไม่บังคับ)"
+                          placeholder="ชื่อไฟล์ (ไม่บังคับ)"
                           className="w-full px-3 py-2 rounded-xl border border-[#C9C4DC] focus:border-[#6B6293] bg-white text-xs sm:text-sm focus:outline-none"
                         />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <button
+                          type="button"
+                          disabled={!hasManualUrlInput || !manualUrlValidation.valid}
+                          onClick={handleAddManualAttachment}
+                          className="w-full px-2.5 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-bold whitespace-nowrap disabled:opacity-45 transition-colors"
+                        >
+                          + เพิ่มลิงก์
+                        </button>
                       </div>
                     </div>
 
@@ -892,7 +990,7 @@ export function DocumentDetailModal({
                       </p>
                     )}
 
-                    {hasManualUrlInput && manualUrlValidation.valid ? (
+                    {hasManualUrlInput && manualUrlValidation.valid && (
                       <div className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2">
                         <span className="truncate flex items-center gap-1.5 min-w-0">
                           <Link2 className="w-3.5 h-3.5 shrink-0" />
@@ -919,60 +1017,130 @@ export function DocumentDetailModal({
                             }}
                             className="text-[#7F1D1D] underline"
                           >
-                            ล้างลิงก์
+                            ล้างช่อง
                           </button>
                         </div>
                       </div>
-                    ) : (
+                    )}
+
+                    {manualAttachments.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-bold text-[#14532D]">
+                          <span>ลิงก์ที่เพิ่มในคิวแล้ว ({manualAttachments.length} ลิงก์)</span>
+                          <button
+                            type="button"
+                            onClick={() => setManualAttachments([])}
+                            className="text-[#7F1D1D] underline font-semibold"
+                          >
+                            ล้างลิงก์ทั้งหมด
+                          </button>
+                        </div>
+                        {manualAttachments.map((att, idx) => (
+                          <div
+                            key={`${att.fileUrl}-${idx}`}
+                            className="text-xs font-semibold text-[#14532D] bg-[#DCFCE7] border border-[#86EFAC] px-3 py-2 rounded-lg flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate flex items-center gap-1.5 min-w-0">
+                              <Link2 className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">
+                                {idx + 1}. {att.fileName}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setManualAttachments((prev) =>
+                                  prev.filter((_, i) => i !== idx)
+                                )
+                              }
+                              className="text-[#7F1D1D] hover:underline shrink-0"
+                            >
+                              นำออก
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!hasManualUrlInput && manualAttachments.length === 0 && (
                       <p className="text-[11px] text-[#574F7D]">
-                        สำหรับไฟล์ขนาดใหญ่ ให้อัปโหลดขึ้น Google Drive ก่อนแล้วนำลิงก์มาวางที่นี่ (แนะนำเปิดสิทธิ์แชร์เป็น “ทุกคนที่มีลิงก์สามารถดูได้”)
+                        สำหรับไฟล์ขนาดใหญ่ ให้อัปโหลดขึ้น Google Drive ก่อนแล้วนำลิงก์มาวางที่นี่ เพิ่มได้หลายลิงก์ (แนะนำเปิดสิทธิ์แชร์เป็น “ทุกคนที่มีลิงก์สามารถดูได้”)
                       </p>
                     )}
+                  </div>
+                )}
+
+                {attachmentMode === 'upload' && manualAttachments.length > 0 && (
+                  <div className="text-xs font-semibold text-[#14532D] bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-2 rounded-lg">
+                    มีลิงก์ URL ที่เพิ่มไว้แล้วอีก {manualAttachments.length} ลิงก์ (จะบันทึกแนบรวมไปด้วย)
+                  </div>
+                )}
+                {attachmentMode === 'url' && selectedFiles.length > 0 && (
+                  <div className="text-xs font-semibold text-[#14532D] bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-2 rounded-lg">
+                    มีไฟล์จากเครื่องที่เลือกไว้แล้วอีก {selectedFiles.length} ไฟล์ (จะอัปโหลดรวมไปด้วย)
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl border border-[#E5E2F0] bg-white flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0 text-sm">
+            <div className="p-3.5 rounded-xl border border-[#E5E2F0] bg-white space-y-2.5">
+              <div className="flex items-center gap-2 text-sm">
                 <Paperclip className="w-4 h-4 text-[#6B6293] shrink-0" />
-                <span className="font-medium text-slate-700 truncate">
-                  ไฟล์แนบ: {doc.fileName || 'ไม่มีเอกสารแนบ'}
+                <span className="font-bold text-[#242038]">
+                  {originalAttachments.length > 0
+                    ? `ไฟล์แนบทั้งหมด (${originalAttachments.length} ไฟล์)`
+                    : 'ไฟล์แนบ: ไม่มีเอกสารแนบ'}
                 </span>
               </div>
-              {hasExistingAttachment && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleCopyAttachmentLink}
-                    title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
-                    className={`px-3 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-                      copiedLink
-                        ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
-                        : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
-                    }`}
-                  >
-                    {copiedLink ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>คัดลอกแล้ว</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>คัดลอกลิงก์</span>
-                      </>
-                    )}
-                  </button>
-                  <a
-                    href={doc.fileData}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-2 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>เปิดดูไฟล์</span>
-                  </a>
+              {originalAttachments.length > 0 && (
+                <div className="space-y-2">
+                  {originalAttachments.map((att, idx) => {
+                    const isCopied = copiedLinkKey === att.fileUrl;
+                    return (
+                      <div
+                        key={`${att.fileUrl}-${idx}`}
+                        className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FAF9FC] border border-[#E5E2F0]"
+                      >
+                        <span className="text-xs sm:text-sm font-medium text-slate-700 truncate min-w-0 flex-1">
+                          {originalAttachments.length > 1 ? `${idx + 1}. ` : ''}
+                          {att.fileName || 'เปิดดูไฟล์'}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAttachmentLink(att.fileUrl)}
+                            title="คัดลอกลิงก์ URL ของไฟล์แนบเพื่อส่งให้ผู้อื่น"
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                              isCopied
+                                ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#15803D]'
+                                : 'bg-[#F1EFF7] hover:bg-[#E4E0F2] text-[#4A4173] border-[#C9C4DC]'
+                            }`}
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>คัดลอกแล้ว</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>คัดลอกลิงก์</span>
+                              </>
+                            )}
+                          </button>
+                          <a
+                            href={att.fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-[#6B6293] hover:bg-[#574F7D] text-white text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>เปิดดูไฟล์</span>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

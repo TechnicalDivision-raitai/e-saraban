@@ -2,6 +2,7 @@ import { AlertTriangle, Check, Loader2, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { SarabanDoc } from '../types/saraban';
 import { WORKFLOW_STATUSES } from '../types/saraban';
+import { getDocAttachments } from '../utils/sarabanUtils';
 
 interface DeleteDocModalProps {
   doc: SarabanDoc | null;
@@ -20,12 +21,13 @@ export function DeleteDocModal({
 
   useEffect(() => {
     if (!doc) return;
-    const hasAttachment = Boolean(doc.fileData && doc.fileData.trim());
+    const hasAttachment = getDocAttachments(doc).length > 0;
     setMode(hasAttachment ? 'attachment' : 'record');
   }, [doc]);
 
   if (!doc) return null;
-  const hasAttachment = Boolean(doc.fileData && doc.fileData.trim());
+  const attachments = getDocAttachments(doc);
+  const hasAttachment = attachments.length > 0;
 
   return (
     <div className="no-print fixed inset-0 z-50 bg-[#2F2A44]/55 flex items-center justify-center p-4">
@@ -73,7 +75,9 @@ export function DeleteDocModal({
                     เอาไฟล์แนบออกจากรายการ (เก็บหนังสือไว้)
                   </div>
                   <div className="text-xs text-slate-600">
-                    ล้างลิงก์ไฟล์ {doc.fileName || 'ไฟล์แนบ'} ออกจากแถวนี้เท่านั้น
+                    {attachments.length > 1
+                      ? `ล้างลิงก์ไฟล์ทั้ง ${attachments.length} ไฟล์ (${attachments.map((a) => a.fileName).join(', ')}) ออกจากแถวนี้เท่านั้น`
+                      : `ล้างลิงก์ไฟล์ ${attachments[0]?.fileName || 'ไฟล์แนบ'} ออกจากแถวนี้เท่านั้น`}
                   </div>
                 </div>
               </label>

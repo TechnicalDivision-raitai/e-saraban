@@ -59,7 +59,7 @@ import {
   removeProjectSyncRecord,
   saveProjectSyncRecord,
 } from './services/projectSyncApi';
-import type { DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
+import type { DocAttachment, DocType, RawSarabanRecord, SarabanDoc, TabId, ToastMessage, UserSession } from './types/saraban';
 import { ADMIN_USER, STAFF_USER, TAB_TITLES } from './types/saraban';
 import {
   downloadExcelImportTemplate,
@@ -69,11 +69,13 @@ import {
   getNextRegNoForYear,
   getTodayISO,
   getUniqueNormalizedSuggestions,
-  resolveManualAttachmentName,
-  validateAttachmentUrl,
   isOverdueDoc,
   mapRawRecordToDoc,
+  mergeDocAttachments,
   parseExcelToImportRecords,
+  resolveManualAttachmentName,
+  serializeDocAttachments,
+  validateAttachmentUrl,
 } from './utils/sarabanUtils';
 
 const AUTH_SESSION_STORAGE_KEY = 'esaraban_auth_session_v1';
@@ -844,54 +846,117 @@ export default function App() {
     [currentUser.name, pushToast]
   );
 
+  const resolveAttachmentsForSave = async (params: {
+    keptExistingAttachments: DocAttachment[];
+    selectedFiles: File[];
+    manualAttachments: DocAttachment[];
+    phaseSuffix?: string;
+  }): Promise<{
+    finalAttachments: DocAttachment[];
+    fileName: string;
+    fileData: string;
+    primaryAttachmentMeta: SarabanAttachmentMeta | null;
+  }> => {
+    const uploadedAttachments: DocAttachment[] = [];
+    let primaryUploadedMeta: SarabanAttachmentMeta | null = null;
+
+    for (let i = 0; i < params.selectedFiles.length; i += 1) {
+      const file = params.selectedFiles[i];
+      const total = params.selectedFiles.length;
+      const uploaded = await uploadFileToDrive(file, {
+        onPhase: (label) => {
+          setUploadPhaseLabel(
+            total > 1 ? `ไฟล์ที่ ${i + 1}/${total}: ${label}` : label
+          );
+        },
+        phaseSuffix: params.phaseSuffix,
+      });
+      uploadedAttachments.push({
+        fileName: uploaded.fileName,
+        fileUrl: uploaded.fileUrl,
+      });
+      if (!primaryUploadedMeta) {
+        primaryUploadedMeta = {
+          fileName: uploaded.fileName,
+          fileUrl: uploaded.fileUrl,
+          fileSize: uploaded.fileSize,
+          mimeType: uploaded.mimeType,
+        };
+      }
+    }
+
+    const normalizedManualAttachments: DocAttachment[] = [];
+    for (const item of params.manualAttachments) {
+      const checked = validateAttachmentUrl(item.fileUrl);
+      if (!checked.valid) {
+        throw new Error(
+          checked.error || 'กรุณาตรวจสอบรูปแบบ URL (ต้องขึ้นต้นด้วย https:// หรือ http://)'
+        );
+      }
+      if (checked.normalizedUrl) {
+        normalizedManualAttachments.push({
+          fileName: resolveManualAttachmentName(item.fileName || '', checked.normalizedUrl),
+          fileUrl: checked.normalizedUrl,
+        });
+      }
+    }
+
+    const finalAttachments = mergeDocAttachments(params.keptExistingAttachments, [
+      ...uploadedAttachments,
+      ...normalizedManualAttachments,
+    ]);
+    const serialized = serializeDocAttachments(finalAttachments);
+    const fallbackPrimary = finalAttachments[0]
+      ? {
+          fileName: finalAttachments[0].fileName || 'เอกสารแนบ',
+          fileUrl: finalAttachments[0].fileUrl,
+          mimeType: inferMimeTypeFromFileName(finalAttachments[0].fileName),
+        }
+      : null;
+
+    return {
+      finalAttachments,
+      fileName: serialized.fileName,
+      fileData: serialized.fileData,
+      primaryAttachmentMeta: primaryUploadedMeta || fallbackPrimary,
+    };
+  };
+
   const handleSaveDocument = async (payload: DocumentFormPayload) => {
     if (!isAdmin) return;
 
-    let uploadedFileName = '';
-    let uploadedFileUrl = '';
-    let uploadedFileSize = 0;
-    let uploadedMimeType = '';
+    let resolvedAttachments: {
+      finalAttachments: DocAttachment[];
+      fileName: string;
+      fileData: string;
+      primaryAttachmentMeta: SarabanAttachmentMeta | null;
+    };
 
-    if (payload.selectedFile) {
+    if (payload.selectedFiles.length > 0) {
       setIsSubmittingDoc(true);
-      setUploadPhaseLabel('กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...');
-      try {
-        const uploaded = await uploadFileToDrive(payload.selectedFile, {
-          onPhase: setUploadPhaseLabel,
-        });
-        uploadedFileName = uploaded.fileName;
-        uploadedFileUrl = uploaded.fileUrl;
-        uploadedFileSize = uploaded.fileSize;
-        uploadedMimeType = uploaded.mimeType;
-      } catch (err) {
-        setIsSubmittingDoc(false);
-        setUploadPhaseLabel('');
-        pushToast(
-          'error',
-          'อัปโหลดไฟล์ไม่สำเร็จ',
-          err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
-        );
-        return;
-      } finally {
-        setIsSubmittingDoc(false);
-        setUploadPhaseLabel('');
-      }
-    } else if (payload.manualFileUrl?.trim()) {
-      const checked = validateAttachmentUrl(payload.manualFileUrl);
-      if (!checked.valid) {
-        pushToast(
-          'error',
-          'ลิงก์ไฟล์แนบไม่ถูกต้อง',
-          checked.error || 'กรุณาตรวจสอบรูปแบบ URL (ต้องขึ้นต้นด้วย https:// หรือ http://)'
-        );
-        return;
-      }
-      uploadedFileUrl = checked.normalizedUrl;
-      uploadedFileName = resolveManualAttachmentName(
-        payload.manualFileName || '',
-        checked.normalizedUrl
+      setUploadPhaseLabel(
+        payload.selectedFiles.length > 1
+          ? `กำลังเตรียมอัปโหลด ${payload.selectedFiles.length} ไฟล์ขึ้น Drive...`
+          : 'กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...'
       );
-      uploadedMimeType = inferMimeTypeFromFileName(uploadedFileName);
+    }
+
+    try {
+      resolvedAttachments = await resolveAttachmentsForSave({
+        keptExistingAttachments: payload.editId !== null ? payload.keptExistingAttachments : [],
+        selectedFiles: payload.selectedFiles,
+        manualAttachments: payload.manualAttachments,
+      });
+    } catch (err) {
+      pushToast(
+        'error',
+        payload.selectedFiles.length > 0 ? 'อัปโหลดไฟล์ไม่สำเร็จ' : 'ลิงก์ไฟล์แนบไม่ถูกต้อง',
+        err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการจัดการไฟล์แนบ'
+      );
+      return;
+    } finally {
+      setIsSubmittingDoc(false);
+      setUploadPhaseLabel('');
     }
 
     const previousDocs = documents;
@@ -924,34 +989,17 @@ export default function App() {
         voucher_payee: payload.voucherPayee,
         voucher_amount: payload.voucherAmount,
         voucher_project: payload.voucherProject,
+        file_name: resolvedAttachments.fileName,
+        file_url: resolvedAttachments.fileData,
       };
 
       if (statusChanged) {
         updates.ack_status = 'รับทราบแล้ว';
         updates.ack_time = statusUpdateTime;
       }
-      if (payload.removeExistingAttachment) {
-        updates.file_name = '';
-        updates.file_url = '';
-      }
-      if (uploadedFileName && uploadedFileUrl) {
-        updates.file_name = uploadedFileName;
-        updates.file_url = uploadedFileUrl;
-      }
 
       const nextDocs = documents.map((d) => {
         if (String(d.id) !== String(payload.editId)) return d;
-        const nextFileName = uploadedFileName
-          ? uploadedFileName
-          : payload.removeExistingAttachment
-          ? ''
-          : d.fileName;
-        const nextFileData = uploadedFileUrl
-          ? uploadedFileUrl
-          : payload.removeExistingAttachment
-          ? ''
-          : d.fileData;
-
         return mapRawRecordToDoc({
           id: d.id,
           type: payload.type,
@@ -969,8 +1017,8 @@ export default function App() {
           due_date: payload.dueDate,
           ack_status: statusChanged ? 'รับทราบแล้ว' : d.ackStatus,
           ack_time: statusChanged ? statusUpdateTime : d.ackTime,
-          file_name: nextFileName,
-          file_url: nextFileData,
+          file_name: resolvedAttachments.fileName,
+          file_url: resolvedAttachments.fileData,
           memo_work: payload.memoWork,
           form_code: payload.formCode,
           form_name: payload.formName,
@@ -1010,24 +1058,7 @@ export default function App() {
         (payload.projectSync?.enabled && payload.projectSync.project) ||
         (payload.procurementSync?.enabled && payload.procurementSync.procurement)
       ) {
-        const finalFileName = uploadedFileName
-          ? uploadedFileName
-          : payload.removeExistingAttachment
-          ? ''
-          : existingDoc?.fileName || '';
-        const finalFileUrl = uploadedFileUrl
-          ? uploadedFileUrl
-          : payload.removeExistingAttachment
-          ? ''
-          : existingDoc?.fileData || '';
-        const attachmentMeta: SarabanAttachmentMeta | null = finalFileUrl
-          ? {
-              fileName: finalFileName || 'เอกสารแนบ',
-              fileUrl: finalFileUrl,
-              ...(uploadedFileSize > 0 ? { fileSize: uploadedFileSize } : {}),
-              mimeType: uploadedMimeType || inferMimeTypeFromFileName(finalFileName),
-            }
-          : null;
+        const attachmentMeta = resolvedAttachments.primaryAttachmentMeta;
         const resolvedBookNo =
           payload.type === 'vouchers' ? payload.voucherNo || '-' : payload.docNumber || '-';
         const resolvedBookDate =
@@ -1106,8 +1137,8 @@ export default function App() {
         due_date: payload.dueDate,
         ack_status: 'รอรับทราบ',
         ack_time: '-',
-        file_name: uploadedFileName,
-        file_url: uploadedFileUrl,
+        file_name: resolvedAttachments.fileName,
+        file_url: resolvedAttachments.fileData,
         memo_work: payload.memoWork,
         form_code: payload.formCode,
         form_name: payload.formName,
@@ -1147,14 +1178,7 @@ export default function App() {
         (payload.projectSync?.enabled && payload.projectSync.project) ||
         (payload.procurementSync?.enabled && payload.procurementSync.procurement)
       ) {
-        const attachmentMeta: SarabanAttachmentMeta | null = uploadedFileUrl
-          ? {
-              fileName: uploadedFileName || 'เอกสารแนบ',
-              fileUrl: uploadedFileUrl,
-              ...(uploadedFileSize > 0 ? { fileSize: uploadedFileSize } : {}),
-              mimeType: uploadedMimeType || inferMimeTypeFromFileName(uploadedFileName),
-            }
-          : null;
+        const attachmentMeta = resolvedAttachments.primaryAttachmentMeta;
         const resolvedBookNo =
           payload.type === 'vouchers' ? payload.voucherNo || '-' : enforcedDocNumber || '-';
         const resolvedBookDate =
@@ -1215,7 +1239,9 @@ export default function App() {
 
     if (mode === 'attachment') {
       const nextDocs = documents.map((d) =>
-        String(d.id) === String(targetDoc.id) ? { ...d, fileName: '', fileData: '' } : d
+        String(d.id) === String(targetDoc.id)
+          ? { ...d, fileName: '', fileData: '', attachments: [] }
+          : d
       );
       setDocuments(nextDocs);
       saveDocsCache(nextDocs);
@@ -1341,46 +1367,38 @@ export default function App() {
   const handleQuickDetailSave = async (payload: QuickDetailSavePayload) => {
     if (!isAdmin) return;
 
-    let uploadedFileName = '';
-    let uploadedFileUrl = '';
+    let resolvedAttachments: {
+      finalAttachments: DocAttachment[];
+      fileName: string;
+      fileData: string;
+      primaryAttachmentMeta: SarabanAttachmentMeta | null;
+    };
 
-    if (payload.selectedFile) {
+    if (payload.selectedFiles.length > 0) {
       setIsSubmittingDoc(true);
-      setUploadPhaseLabel('กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...');
-      try {
-        const uploaded = await uploadFileToDrive(payload.selectedFile, {
-          onPhase: setUploadPhaseLabel,
-        });
-        uploadedFileName = uploaded.fileName;
-        uploadedFileUrl = uploaded.fileUrl;
-      } catch (err) {
-        setIsSubmittingDoc(false);
-        setUploadPhaseLabel('');
-        pushToast(
-          'error',
-          'อัปโหลดไฟล์ไม่สำเร็จ',
-          err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive'
-        );
-        return;
-      } finally {
-        setIsSubmittingDoc(false);
-        setUploadPhaseLabel('');
-      }
-    } else if (payload.manualFileUrl?.trim()) {
-      const checked = validateAttachmentUrl(payload.manualFileUrl);
-      if (!checked.valid) {
-        pushToast(
-          'error',
-          'ลิงก์ไฟล์แนบไม่ถูกต้อง',
-          checked.error || 'กรุณาตรวจสอบรูปแบบ URL (ต้องขึ้นต้นด้วย https:// หรือ http://)'
-        );
-        return;
-      }
-      uploadedFileUrl = checked.normalizedUrl;
-      uploadedFileName = resolveManualAttachmentName(
-        payload.manualFileName || '',
-        checked.normalizedUrl
+      setUploadPhaseLabel(
+        payload.selectedFiles.length > 1
+          ? `กำลังเตรียมอัปโหลด ${payload.selectedFiles.length} ไฟล์ขึ้น Drive...`
+          : 'กำลังเตรียมไฟล์อัปโหลดขึ้น Drive...'
       );
+    }
+
+    try {
+      resolvedAttachments = await resolveAttachmentsForSave({
+        keptExistingAttachments: payload.keptExistingAttachments,
+        selectedFiles: payload.selectedFiles,
+        manualAttachments: payload.manualAttachments,
+      });
+    } catch (err) {
+      pushToast(
+        'error',
+        payload.selectedFiles.length > 0 ? 'อัปโหลดไฟล์ไม่สำเร็จ' : 'ลิงก์ไฟล์แนบไม่ถูกต้อง',
+        err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการจัดการไฟล์แนบ'
+      );
+      return;
+    } finally {
+      setIsSubmittingDoc(false);
+      setUploadPhaseLabel('');
     }
 
     const previousDocs = documents;
@@ -1393,20 +1411,13 @@ export default function App() {
       assignee: payload.assignee,
       status: payload.status,
       due_date: payload.dueDate,
+      file_name: resolvedAttachments.fileName,
+      file_url: resolvedAttachments.fileData,
     };
 
     if (statusChanged) {
       updates.ack_status = 'รับทราบแล้ว';
       updates.ack_time = statusUpdateTime;
-    }
-
-    if (payload.removeExistingAttachment) {
-      updates.file_name = '';
-      updates.file_url = '';
-    }
-    if (uploadedFileName && uploadedFileUrl) {
-      updates.file_name = uploadedFileName;
-      updates.file_url = uploadedFileUrl;
     }
 
     const nextDocs = documents.map((d) => {
@@ -1416,18 +1427,13 @@ export default function App() {
         assignee: payload.assignee,
         status: payload.status,
         dueDate: payload.dueDate,
+        fileName: resolvedAttachments.fileName,
+        fileData: resolvedAttachments.fileData,
+        attachments: resolvedAttachments.finalAttachments,
       };
       if (statusChanged) {
         updated.ackStatus = 'รับทราบแล้ว';
         updated.ackTime = statusUpdateTime;
-      }
-      if (payload.removeExistingAttachment) {
-        updated.fileName = '';
-        updated.fileData = '';
-      }
-      if (uploadedFileName && uploadedFileUrl) {
-        updated.fileName = uploadedFileName;
-        updated.fileData = uploadedFileUrl;
       }
       return updated;
     });
@@ -1436,7 +1442,7 @@ export default function App() {
     saveDocsCache(nextDocs);
     const updatedDetail = nextDocs.find((d) => String(d.id) === String(payload.id)) || null;
     setDetailDoc(updatedDetail);
-    pushToast('success', 'บันทึกข้อมูลเพิ่มเติมสำเร็จ', 'อัปเดตการมอบหมายและสถานะเรียบร้อยแล้ว');
+    pushToast('success', 'บันทึกข้อมูลเพิ่มเติมสำเร็จ', 'อัปเดตการมอบหมายและไฟล์แนบเรียบร้อยแล้ว');
 
     enqueueBackgroundWrite(
       async () => {
@@ -1464,16 +1470,22 @@ export default function App() {
     if (!isAdmin) return;
     setIsSyncingToProject(true);
     try {
-      let attachmentMeta: SarabanAttachmentMeta | null = null;
+      const resolvedAttachments = await resolveAttachmentsForSave({
+        keptExistingAttachments: quickFilePayload.keptExistingAttachments,
+        selectedFiles: quickFilePayload.selectedFiles,
+        manualAttachments: quickFilePayload.manualAttachments,
+        phaseSuffix: 'ก่อนส่งเข้าโครงการ',
+      });
 
-      if (quickFilePayload.selectedFile) {
-        const uploaded = await uploadFileToDrive(quickFilePayload.selectedFile, {
-          onPhase: setUploadPhaseLabel,
-          phaseSuffix: 'ก่อนส่งเข้าโครงการ',
-        });
-        const uploadedUrl = uploaded.fileUrl;
-        const uploadedName = uploaded.fileName;
+      const attachmentsChanged =
+        resolvedAttachments.fileName !== (doc.fileName || '') ||
+        resolvedAttachments.fileData !== (doc.fileData || '');
 
+      if (
+        attachmentsChanged ||
+        quickFilePayload.selectedFiles.length > 0 ||
+        quickFilePayload.manualAttachments.length > 0
+      ) {
         const nextDocs = documents.map((d) =>
           String(d.id) === String(doc.id)
             ? {
@@ -1481,8 +1493,9 @@ export default function App() {
                 assignee: quickFilePayload.assignee,
                 status: quickFilePayload.status,
                 dueDate: quickFilePayload.dueDate,
-                fileName: uploadedName,
-                fileData: uploadedUrl,
+                fileName: resolvedAttachments.fileName,
+                fileData: resolvedAttachments.fileData,
+                attachments: resolvedAttachments.finalAttachments,
               }
             : d
         );
@@ -1501,79 +1514,14 @@ export default function App() {
                 assignee: quickFilePayload.assignee,
                 status: quickFilePayload.status,
                 due_date: quickFilePayload.dueDate,
-                file_name: uploadedName,
-                file_url: uploadedUrl,
+                file_name: resolvedAttachments.fileName,
+                file_url: resolvedAttachments.fileData,
               },
             });
           },
           () => {},
           'อัปเดตไฟล์แนบลง Google Drive ไม่สำเร็จ'
         );
-
-        attachmentMeta = {
-          fileName: uploadedName,
-          fileUrl: uploadedUrl,
-          fileSize: uploaded.fileSize,
-          mimeType: uploaded.mimeType,
-        };
-      } else if (quickFilePayload.manualFileUrl?.trim()) {
-        const checked = validateAttachmentUrl(quickFilePayload.manualFileUrl);
-        if (!checked.valid) {
-          throw new Error(checked.error || 'ลิงก์ไฟล์แนบไม่ถูกต้อง');
-        }
-        const manualUrl = checked.normalizedUrl;
-        const manualName = resolveManualAttachmentName(
-          quickFilePayload.manualFileName || '',
-          manualUrl
-        );
-
-        const nextDocs = documents.map((d) =>
-          String(d.id) === String(doc.id)
-            ? {
-                ...d,
-                assignee: quickFilePayload.assignee,
-                status: quickFilePayload.status,
-                dueDate: quickFilePayload.dueDate,
-                fileName: manualName,
-                fileData: manualUrl,
-              }
-            : d
-        );
-        setDocuments(nextDocs);
-        saveDocsCache(nextDocs);
-        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
-        setDetailDoc(updatedDetail);
-
-        enqueueBackgroundWrite(
-          async () => {
-            await callDriveApi({
-              action: 'update',
-              id: doc.id,
-              type: doc.type,
-              updates: {
-                assignee: quickFilePayload.assignee,
-                status: quickFilePayload.status,
-                due_date: quickFilePayload.dueDate,
-                file_name: manualName,
-                file_url: manualUrl,
-              },
-            });
-          },
-          () => {},
-          'อัปเดตลิงก์ไฟล์แนบลง Google Drive ไม่สำเร็จ'
-        );
-
-        attachmentMeta = {
-          fileName: manualName,
-          fileUrl: manualUrl,
-          mimeType: inferMimeTypeFromFileName(manualName),
-        };
-      } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
-        attachmentMeta = {
-          fileName: doc.fileName || 'เอกสารแนบ',
-          fileUrl: doc.fileData.trim(),
-          mimeType: inferMimeTypeFromFileName(doc.fileName),
-        };
       }
 
       setUploadPhaseLabel('กำลังส่งข้อมูลเข้าระบบงานโครงการ...');
@@ -1592,7 +1540,7 @@ export default function App() {
           doc.type === 'vouchers'
             ? doc.voucherProject || '-'
             : doc.subject || '-',
-        attachment: attachmentMeta,
+        attachment: resolvedAttachments.primaryAttachmentMeta,
       });
     } finally {
       setIsSyncingToProject(false);
@@ -1649,16 +1597,22 @@ export default function App() {
     if (!isAdmin) return;
     setIsSyncingToProcurement(true);
     try {
-      let attachmentMeta: SarabanAttachmentMeta | null = null;
+      const resolvedAttachments = await resolveAttachmentsForSave({
+        keptExistingAttachments: quickFilePayload.keptExistingAttachments,
+        selectedFiles: quickFilePayload.selectedFiles,
+        manualAttachments: quickFilePayload.manualAttachments,
+        phaseSuffix: 'ก่อนส่งเข้าจัดซื้อจัดจ้าง',
+      });
 
-      if (quickFilePayload.selectedFile) {
-        const uploaded = await uploadFileToDrive(quickFilePayload.selectedFile, {
-          onPhase: setUploadPhaseLabel,
-          phaseSuffix: 'ก่อนส่งเข้าจัดซื้อจัดจ้าง',
-        });
-        const uploadedUrl = uploaded.fileUrl;
-        const uploadedName = uploaded.fileName;
+      const attachmentsChanged =
+        resolvedAttachments.fileName !== (doc.fileName || '') ||
+        resolvedAttachments.fileData !== (doc.fileData || '');
 
+      if (
+        attachmentsChanged ||
+        quickFilePayload.selectedFiles.length > 0 ||
+        quickFilePayload.manualAttachments.length > 0
+      ) {
         const nextDocs = documents.map((d) =>
           String(d.id) === String(doc.id)
             ? {
@@ -1666,8 +1620,9 @@ export default function App() {
                 assignee: quickFilePayload.assignee,
                 status: quickFilePayload.status,
                 dueDate: quickFilePayload.dueDate,
-                fileName: uploadedName,
-                fileData: uploadedUrl,
+                fileName: resolvedAttachments.fileName,
+                fileData: resolvedAttachments.fileData,
+                attachments: resolvedAttachments.finalAttachments,
               }
             : d
         );
@@ -1686,79 +1641,14 @@ export default function App() {
                 assignee: quickFilePayload.assignee,
                 status: quickFilePayload.status,
                 due_date: quickFilePayload.dueDate,
-                file_name: uploadedName,
-                file_url: uploadedUrl,
+                file_name: resolvedAttachments.fileName,
+                file_url: resolvedAttachments.fileData,
               },
             });
           },
           () => {},
           'อัปเดตไฟล์แนบลง Google Drive ไม่สำเร็จ'
         );
-
-        attachmentMeta = {
-          fileName: uploadedName,
-          fileUrl: uploadedUrl,
-          fileSize: uploaded.fileSize,
-          mimeType: uploaded.mimeType,
-        };
-      } else if (quickFilePayload.manualFileUrl?.trim()) {
-        const checked = validateAttachmentUrl(quickFilePayload.manualFileUrl);
-        if (!checked.valid) {
-          throw new Error(checked.error || 'ลิงก์ไฟล์แนบไม่ถูกต้อง');
-        }
-        const manualUrl = checked.normalizedUrl;
-        const manualName = resolveManualAttachmentName(
-          quickFilePayload.manualFileName || '',
-          manualUrl
-        );
-
-        const nextDocs = documents.map((d) =>
-          String(d.id) === String(doc.id)
-            ? {
-                ...d,
-                assignee: quickFilePayload.assignee,
-                status: quickFilePayload.status,
-                dueDate: quickFilePayload.dueDate,
-                fileName: manualName,
-                fileData: manualUrl,
-              }
-            : d
-        );
-        setDocuments(nextDocs);
-        saveDocsCache(nextDocs);
-        const updatedDetail = nextDocs.find((d) => String(d.id) === String(doc.id)) || null;
-        setDetailDoc(updatedDetail);
-
-        enqueueBackgroundWrite(
-          async () => {
-            await callDriveApi({
-              action: 'update',
-              id: doc.id,
-              type: doc.type,
-              updates: {
-                assignee: quickFilePayload.assignee,
-                status: quickFilePayload.status,
-                due_date: quickFilePayload.dueDate,
-                file_name: manualName,
-                file_url: manualUrl,
-              },
-            });
-          },
-          () => {},
-          'อัปเดตลิงก์ไฟล์แนบลง Google Drive ไม่สำเร็จ'
-        );
-
-        attachmentMeta = {
-          fileName: manualName,
-          fileUrl: manualUrl,
-          mimeType: inferMimeTypeFromFileName(manualName),
-        };
-      } else if (!quickFilePayload.removeExistingAttachment && doc.fileData?.trim()) {
-        attachmentMeta = {
-          fileName: doc.fileName || 'เอกสารแนบ',
-          fileUrl: doc.fileData.trim(),
-          mimeType: inferMimeTypeFromFileName(doc.fileName),
-        };
       }
 
       setUploadPhaseLabel('กำลังส่งข้อมูลเข้าระบบงานจัดซื้อจัดจ้าง...');
@@ -1768,7 +1658,7 @@ export default function App() {
         bookNo: doc.type === 'vouchers' ? doc.voucherNo || '' : doc.docNumber || '',
         bookDate: doc.type === 'vouchers' ? doc.voucherDate || '' : doc.docDate || '',
         subject: doc.type === 'vouchers' ? doc.voucherProject || '' : doc.subject || '',
-        attachment: attachmentMeta,
+        attachment: resolvedAttachments.primaryAttachmentMeta,
       });
     } finally {
       setIsSyncingToProcurement(false);

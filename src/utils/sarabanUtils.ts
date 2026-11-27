@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { DocType, RawSarabanRecord, SarabanDoc } from '../types/saraban';
+import type { DocAttachment, DocType, RawSarabanRecord, SarabanDoc } from '../types/saraban';
 import { BASE_YEARS, DOC_TYPE_META, WORKFLOW_STATUSES } from '../types/saraban';
 
 export const CURRENT_YEAR_FILTER_KEY = '__CURRENT__';
@@ -280,6 +280,7 @@ export function mapRawRecordToDoc(d: RawSarabanRecord): SarabanDoc {
     ackTime: normalizedAckTime,
     fileName: d.file_name || '',
     fileData: d.file_url || '',
+    attachments: parseDocAttachments(d.file_name, d.file_url),
     memoWork: d.memo_work || '',
     formCode: d.form_code || '',
     formName: d.form_name || '',
@@ -863,6 +864,138 @@ export function resolveManualAttachmentName(customName: string, url: string): st
   }
 
   return 'เอกสารแนบ (ลิงก์ URL)';
+}
+
+export function parseDocAttachments(rawFileName?: unknown, rawFileUrl?: unknown): DocAttachment[] {
+  const cleanRawUrl = String(rawFileUrl ?? '').trim();
+  const cleanRawName = String(rawFileName ?? '').trim();
+  if (!cleanRawUrl || cleanRawUrl === '-') return [];
+
+  const dedupe = (items: DocAttachment[]): DocAttachment[] => {
+    const seen = new Set<string>();
+    const result: DocAttachment[] = [];
+    items.forEach((item) => {
+      const url = String(item.fileUrl || '').trim();
+      if (!url || url === '-' || seen.has(url)) return;
+      seen.add(url);
+      result.push({
+        fileName: normalizeWhitespace(item.fileName || '') || resolveManualAttachmentName('', url),
+        fileUrl: url,
+      });
+    });
+    return result;
+  };
+
+  const nameLines = cleanRawName
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== '-');
+
+  if (cleanRawUrl.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(cleanRawUrl);
+      if (Array.isArray(parsed)) {
+        const items: DocAttachment[] = [];
+        parsed.forEach((entry, idx) => {
+          if (typeof entry === 'string') {
+            const url = entry.trim();
+            if (url) {
+              items.push({
+                fileName: nameLines[idx] || resolveManualAttachmentName('', url),
+                fileUrl: url,
+              });
+            }
+            return;
+          }
+          if (entry && typeof entry === 'object') {
+            const record = entry as Record<string, unknown>;
+            const url = String(record.fileUrl ?? record.url ?? record.file_url ?? '').trim();
+            if (!url) return;
+            const name = String(record.fileName ?? record.name ?? record.file_name ?? '').trim();
+            items.push({
+              fileName: name || nameLines[idx] || resolveManualAttachmentName('', url),
+              fileUrl: url,
+            });
+          }
+        });
+        return dedupe(items);
+      }
+    } catch {
+      // Fall back to newline / single URL parsing below
+    }
+  }
+
+  const urlLines = cleanRawUrl
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== '-');
+
+  if (urlLines.length === 0) return [];
+
+  return dedupe(
+    urlLines.map((url, idx) => ({
+      fileName:
+        nameLines[idx] ||
+        (urlLines.length === 1 ? cleanRawName : '') ||
+        resolveManualAttachmentName('', url),
+      fileUrl: url,
+    }))
+  );
+}
+
+export function getDocAttachments(
+  doc?: Pick<SarabanDoc, 'fileName' | 'fileData'> | null
+): DocAttachment[] {
+  if (!doc) return [];
+  return parseDocAttachments(doc.fileName, doc.fileData);
+}
+
+export function serializeDocAttachments(attachments: DocAttachment[]): {
+  fileName: string;
+  fileData: string;
+} {
+  const cleanList = mergeDocAttachments([], attachments);
+  if (cleanList.length === 0) {
+    return { fileName: '', fileData: '' };
+  }
+  if (cleanList.length === 1) {
+    return {
+      fileName: cleanList[0].fileName || 'ไฟล์แนบ',
+      fileData: cleanList[0].fileUrl,
+    };
+  }
+  return {
+    fileName: cleanList.map((a, idx) => a.fileName || `ไฟล์แนบ ${idx + 1}`).join('\n'),
+    fileData: JSON.stringify(
+      cleanList.map((a, idx) => ({
+        fileName: a.fileName || `ไฟล์แนบ ${idx + 1}`,
+        fileUrl: a.fileUrl,
+      }))
+    ),
+  };
+}
+
+export function mergeDocAttachments(
+  existing: DocAttachment[],
+  added: DocAttachment[]
+): DocAttachment[] {
+  const byUrl = new Map<string, DocAttachment>();
+  const orderedUrls: string[] = [];
+
+  const pushItem = (item: DocAttachment) => {
+    const url = String(item.fileUrl || '').trim();
+    if (!url || url === '-') return;
+    const name = normalizeWhitespace(item.fileName || '') || resolveManualAttachmentName('', url);
+    if (!byUrl.has(url)) {
+      orderedUrls.push(url);
+    }
+    byUrl.set(url, { fileName: name, fileUrl: url });
+  };
+
+  existing.forEach(pushItem);
+  added.forEach(pushItem);
+
+  return orderedUrls.map((url) => byUrl.get(url)!);
 }
 
 export async function parseExcelToImportRecords(
