@@ -866,6 +866,8 @@ export function resolveManualAttachmentName(customName: string, url: string): st
   return 'เอกสารแนบ (ลิงก์ URL)';
 }
 
+const MULTI_ATTACHMENT_MARKER = 'saraban_multi=';
+
 export function parseDocAttachments(rawFileName?: unknown, rawFileUrl?: unknown): DocAttachment[] {
   const cleanRawUrl = String(rawFileUrl ?? '').trim();
   const cleanRawName = String(rawFileName ?? '').trim();
@@ -891,9 +893,49 @@ export function parseDocAttachments(rawFileName?: unknown, rawFileUrl?: unknown)
     .map((line) => line.trim())
     .filter((line) => line && line !== '-');
 
-  if (cleanRawUrl.startsWith('[')) {
+  const markerIdx = cleanRawUrl.search(new RegExp(`[#&]${MULTI_ATTACHMENT_MARKER}`));
+  if (markerIdx !== -1) {
+    const encodedPayload = cleanRawUrl
+      .slice(markerIdx + 1 + MULTI_ATTACHMENT_MARKER.length)
+      .split('&')[0];
     try {
-      const parsed = JSON.parse(cleanRawUrl);
+      const parsed = JSON.parse(decodeURIComponent(encodedPayload));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const items: DocAttachment[] = [];
+        parsed.forEach((entry, idx) => {
+          if (entry && typeof entry === 'object') {
+            const record = entry as Record<string, unknown>;
+            const url = String(record.fileUrl ?? record.url ?? record.file_url ?? '').trim();
+            if (!url) return;
+            const name = String(record.fileName ?? record.name ?? record.file_name ?? '').trim();
+            items.push({
+              fileName: name || nameLines[idx] || resolveManualAttachmentName('', url),
+              fileUrl: url,
+            });
+          }
+        });
+        if (items.length > 0) return dedupe(items);
+      }
+    } catch {
+      // Fall back to base URL if fragment JSON is malformed
+      const baseUrl = cleanRawUrl.slice(0, markerIdx).trim();
+      if (baseUrl) {
+        return dedupe([
+          {
+            fileName: cleanRawName || resolveManualAttachmentName('', baseUrl),
+            fileUrl: baseUrl,
+          },
+        ]);
+      }
+    }
+  }
+
+  if (cleanRawUrl.startsWith('[') || cleanRawUrl.startsWith('[{%22')) {
+    try {
+      const jsonCandidate = cleanRawUrl.startsWith('[{%22')
+        ? cleanRawUrl.replace(/%22/g, '"')
+        : cleanRawUrl;
+      const parsed = JSON.parse(jsonCandidate);
       if (Array.isArray(parsed)) {
         const items: DocAttachment[] = [];
         parsed.forEach((entry, idx) => {
@@ -964,14 +1006,17 @@ export function serializeDocAttachments(attachments: DocAttachment[]): {
       fileData: cleanList[0].fileUrl,
     };
   }
+  const primaryUrl = cleanList[0].fileUrl;
+  const separator = primaryUrl.includes('#') ? '&' : '#';
+  const payload = cleanList.map((a, idx) => ({
+    fileName: a.fileName || `ไฟล์แนบ ${idx + 1}`,
+    fileUrl: a.fileUrl,
+  }));
   return {
-    fileName: cleanList.map((a, idx) => a.fileName || `ไฟล์แนบ ${idx + 1}`).join('\n'),
-    fileData: JSON.stringify(
-      cleanList.map((a, idx) => ({
-        fileName: a.fileName || `ไฟล์แนบ ${idx + 1}`,
-        fileUrl: a.fileUrl,
-      }))
-    ),
+    fileName: cleanList.map((a, idx) => a.fileName || `ไฟล์แนบ ${idx + 1}`).join(' | '),
+    fileData: `${primaryUrl}${separator}${MULTI_ATTACHMENT_MARKER}${encodeURIComponent(
+      JSON.stringify(payload)
+    )}`,
   };
 }
 

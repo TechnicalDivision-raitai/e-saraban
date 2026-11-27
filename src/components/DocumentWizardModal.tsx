@@ -82,6 +82,7 @@ export interface DocumentFormPayload {
   keptExistingAttachments: DocAttachment[];
   selectedFiles: File[];
   manualAttachments: DocAttachment[];
+  trashRemovedDriveFiles: boolean;
   projectSync?: ProjectSyncSelection | null;
   procurementSync?: ProcurementSyncSelection | null;
 }
@@ -167,6 +168,7 @@ export function DocumentWizardModal({
   const [manualAttachments, setManualAttachments] = useState<DocAttachment[]>([]);
   const [manualFileUrl, setManualFileUrl] = useState('');
   const [manualFileName, setManualFileName] = useState('');
+  const [trashRemovedDriveFiles, setTrashRemovedDriveFiles] = useState(true);
 
   const createDefaultProjectSync = (
     targetType: DocType,
@@ -254,6 +256,7 @@ export function DocumentWizardModal({
     setManualAttachments([]);
     setManualFileUrl('');
     setManualFileName('');
+    setTrashRemovedDriveFiles(true);
 
     if (editingDoc) {
       const t = (editingDoc.type as DocType) || 'incoming';
@@ -789,6 +792,10 @@ export function DocumentWizardModal({
       keptExistingAttachments,
       selectedFiles,
       manualAttachments: getCombinedManualAttachments(),
+      trashRemovedDriveFiles:
+        editingDoc && keptExistingAttachments.length < initialExistingAttachments.length
+          ? trashRemovedDriveFiles
+          : false,
       projectSync:
         ['outgoing', 'memos', 'orders', 'vouchers'].includes(docType) && projectSync.enabled
           ? projectSync
@@ -1637,6 +1644,19 @@ export function DocumentWizardModal({
                           </div>
                         );
                       })}
+                      {editingDoc && keptExistingAttachments.length < initialExistingAttachments.length && (
+                        <label className="flex items-start gap-2 p-2.5 rounded-xl bg-white border border-[#D7D2E6] cursor-pointer hover:bg-[#FAF9FC] transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={trashRemovedDriveFiles}
+                            onChange={(e) => setTrashRemovedDriveFiles(e.target.checked)}
+                            className="mt-0.5 w-3.5 h-3.5 accent-[#6B6293] rounded"
+                          />
+                          <span className="text-[11px] font-semibold text-[#242038] leading-snug">
+                            ย้ายไฟล์ที่นำออกใน Google Drive ลงถังขยะด้วย (เฉพาะไฟล์ในโฟลเดอร์ระบบ)
+                          </span>
+                        </label>
+                      )}
                     </div>
                   )}
 

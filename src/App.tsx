@@ -65,6 +65,7 @@ import {
   downloadExcelImportTemplate,
   exportRegisterCSV,
   formatThaiDateTime,
+  getDocAttachments,
   getNextMemoDocNumber,
   getNextRegNoForYear,
   getTodayISO,
@@ -922,6 +923,24 @@ export default function App() {
     };
   };
 
+  const filterUnreferencedFileUrls = (
+    urls: string[],
+    excludeDocId: string | number
+  ): string[] => {
+    const cleanCandidates = Array.from(
+      new Set(urls.map((u) => String(u || '').trim()).filter(Boolean))
+    );
+    if (cleanCandidates.length === 0) return [];
+    const usedElsewhere = new Set<string>();
+    documents.forEach((d) => {
+      if (String(d.id) === String(excludeDocId)) return;
+      getDocAttachments(d).forEach((att) => {
+        if (att.fileUrl) usedElsewhere.add(att.fileUrl);
+      });
+    });
+    return cleanCandidates.filter((u) => !usedElsewhere.has(u));
+  };
+
   const handleSaveDocument = async (payload: DocumentFormPayload) => {
     if (!isAdmin) return;
 
@@ -1038,14 +1057,43 @@ export default function App() {
       setEditingDoc(null);
       pushToast('success', 'อัปเดตข้อมูลสำเร็จ', 'บันทึกการแก้ไขเรียบร้อยแล้ว');
 
+      const originalUrls = existingDoc
+        ? getDocAttachments(existingDoc).map((a) => a.fileUrl)
+        : [];
+      const keptAfterSaveSet = new Set(resolvedAttachments.finalAttachments.map((a) => a.fileUrl));
+      const removedUrls = filterUnreferencedFileUrls(
+        originalUrls.filter((u) => !keptAfterSaveSet.has(u)),
+        payload.editId
+      );
+      const shouldTrashDriveFiles = Boolean(payload.trashRemovedDriveFiles && removedUrls.length > 0);
+
       enqueueBackgroundWrite(
         async () => {
-          await callDriveApi({
+          const res = await callDriveApi({
             action: 'update',
             id: payload.editId,
             type: existingDoc?.type || payload.type,
             updates,
+            trashDriveFiles: shouldTrashDriveFiles,
+            removedFileUrls: shouldTrashDriveFiles ? removedUrls : [],
           });
+          if (shouldTrashDriveFiles) {
+            if (res.driveTrash) {
+              if (res.driveTrash.trashedCount > 0) {
+                pushToast(
+                  'info',
+                  `ย้ายไฟล์ใน Drive ลงถังขยะแล้ว (${res.driveTrash.trashedCount} ไฟล์)`,
+                  'กู้คืนได้จากถังขยะ Google Drive ภายใน 30 วัน'
+                );
+              }
+            } else {
+              pushToast(
+                'info',
+                'นำไฟล์ออกจากรายการแล้ว (ยังไม่ย้ายไฟล์ใน Drive)',
+                'กรุณา Deploy โค้ด Apps Script เวอร์ชันใหม่เพื่อเปิดใช้การย้ายไฟล์ลงถังขยะอัตโนมัติ'
+              );
+            }
+          }
         },
         () => {
           setDocuments(previousDocs);
@@ -1232,10 +1280,40 @@ export default function App() {
     }
   };
 
-  const handleConfirmDelete = async (mode: 'attachment' | 'record') => {
+  const handleConfirmDelete = async (
+    mode: 'attachment' | 'record',
+    options: { trashDriveFiles: boolean }
+  ) => {
     if (!deleteTargetDoc || !isAdmin) return;
     const targetDoc = deleteTargetDoc;
     const previousDocs = documents;
+    const removedUrls = filterUnreferencedFileUrls(
+      getDocAttachments(targetDoc).map((a) => a.fileUrl),
+      targetDoc.id
+    );
+    const shouldTrashDriveFiles = Boolean(options.trashDriveFiles && removedUrls.length > 0);
+
+    const notifyDriveTrashOutcome = (
+      driveTrash: { trashedCount: number; skippedCount: number } | null | undefined,
+      actionVerb: string
+    ) => {
+      if (!shouldTrashDriveFiles) return;
+      if (driveTrash) {
+        if (driveTrash.trashedCount > 0) {
+          pushToast(
+            'info',
+            `ย้ายไฟล์ใน Drive ลงถังขยะแล้ว (${driveTrash.trashedCount} ไฟล์)`,
+            'สามารถกู้คืนได้จากถังขยะ Google Drive ภายใน 30 วัน'
+          );
+        }
+      } else {
+        pushToast(
+          'info',
+          `${actionVerb}ใน Sheet แล้ว (ยังไม่ย้ายไฟล์ใน Drive)`,
+          'กรุณา Deploy โค้ด Apps Script เวอร์ชันใหม่เพื่อเปิดใช้การย้ายไฟล์ลงถังขยะอัตโนมัติ'
+        );
+      }
+    };
 
     if (mode === 'attachment') {
       const nextDocs = documents.map((d) =>
@@ -1251,12 +1329,15 @@ export default function App() {
 
       enqueueBackgroundWrite(
         async () => {
-          await callDriveApi({
+          const res = await callDriveApi({
             action: 'update',
             id: targetDoc.id,
             type: targetDoc.type,
             updates: { file_name: '', file_url: '' },
+            trashDriveFiles: shouldTrashDriveFiles,
+            removedFileUrls: shouldTrashDriveFiles ? removedUrls : [],
           });
+          notifyDriveTrashOutcome(res.driveTrash, 'นำไฟล์แนบออก');
         },
         () => {
           setDocuments(previousDocs);
@@ -1274,11 +1355,14 @@ export default function App() {
 
       enqueueBackgroundWrite(
         async () => {
-          await callDriveApi({
+          const res = await callDriveApi({
             action: 'delete',
             id: targetDoc.id,
             type: targetDoc.type,
+            trashDriveFiles: shouldTrashDriveFiles,
+            fileUrls: shouldTrashDriveFiles ? removedUrls : [],
           });
+          notifyDriveTrashOutcome(res.driveTrash, 'ลบรายการ');
         },
         () => {
           setDocuments(previousDocs);
@@ -1444,14 +1528,43 @@ export default function App() {
     setDetailDoc(updatedDetail);
     pushToast('success', 'บันทึกข้อมูลเพิ่มเติมสำเร็จ', 'อัปเดตการมอบหมายและไฟล์แนบเรียบร้อยแล้ว');
 
+    const originalUrls = existingDoc
+      ? getDocAttachments(existingDoc).map((a) => a.fileUrl)
+      : [];
+    const keptAfterSaveSet = new Set(resolvedAttachments.finalAttachments.map((a) => a.fileUrl));
+    const removedUrls = filterUnreferencedFileUrls(
+      originalUrls.filter((u) => !keptAfterSaveSet.has(u)),
+      payload.id
+    );
+    const shouldTrashDriveFiles = Boolean(payload.trashRemovedDriveFiles && removedUrls.length > 0);
+
     enqueueBackgroundWrite(
       async () => {
-        await callDriveApi({
+        const res = await callDriveApi({
           action: 'update',
           id: payload.id,
           type: existingDoc?.type,
           updates,
+          trashDriveFiles: shouldTrashDriveFiles,
+          removedFileUrls: shouldTrashDriveFiles ? removedUrls : [],
         });
+        if (shouldTrashDriveFiles) {
+          if (res.driveTrash) {
+            if (res.driveTrash.trashedCount > 0) {
+              pushToast(
+                'info',
+                `ย้ายไฟล์ใน Drive ลงถังขยะแล้ว (${res.driveTrash.trashedCount} ไฟล์)`,
+                'กู้คืนได้จากถังขยะ Google Drive ภายใน 30 วัน'
+              );
+            }
+          } else {
+            pushToast(
+              'info',
+              'นำไฟล์ออกจากรายการแล้ว (ยังไม่ย้ายไฟล์ใน Drive)',
+              'กรุณา Deploy โค้ด Apps Script เวอร์ชันใหม่เพื่อเปิดใช้การย้ายไฟล์ลงถังขยะอัตโนมัติ'
+            );
+          }
+        }
       },
       () => {
         setDocuments(previousDocs);

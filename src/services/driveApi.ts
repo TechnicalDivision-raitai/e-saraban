@@ -234,10 +234,16 @@ export async function fetchDocumentsFromDrive(
     : new Error('ไม่สามารถเชื่อมต่อ Google Drive ได้');
 }
 
+export interface DriveTrashSummary {
+  trashedCount: number;
+  skippedCount: number;
+  results?: { fileId?: string; fileName?: string; url?: string; status: string; message?: string }[];
+}
+
 export async function callDriveApi<T = Record<string, unknown>>(
   payload: Record<string, unknown>,
   overrideUrl?: string
-): Promise<T & { status: string; message?: string; fileUrl?: string }> {
+): Promise<T & { status: string; message?: string; fileUrl?: string; driveTrash?: DriveTrashSummary | null }> {
   const scriptUrl = (overrideUrl || getConfiguredScriptUrl()).trim();
   const endpoints = getDriveEndpoints('', scriptUrl);
   const action = String(payload.action || '');
@@ -267,7 +273,12 @@ export async function callDriveApi<T = Record<string, unknown>>(
         throw new Error(`HTTP ${response.status}`);
       }
       const text = await response.text();
-      const result = JSON.parse(text) as T & { status: string; message?: string; fileUrl?: string };
+      const result = JSON.parse(text) as T & {
+        status: string;
+        message?: string;
+        fileUrl?: string;
+        driveTrash?: DriveTrashSummary | null;
+      };
       if (!result || result.status !== 'success') {
         throw new Error(result?.message || 'ไม่สามารถดำเนินการกับ Google Drive ได้');
       }
@@ -283,6 +294,36 @@ export async function callDriveApi<T = Record<string, unknown>>(
   throw lastError instanceof Error
     ? lastError
     : new Error('ไม่สามารถดำเนินการกับ Google Drive ได้');
+}
+
+export async function deleteFilesInDrive(
+  fileUrls: string[],
+  overrideUrl?: string
+): Promise<{ supported: boolean; trashedCount: number; skippedCount: number }> {
+  const cleanUrls = fileUrls.map((u) => String(u || '').trim()).filter(Boolean);
+  if (cleanUrls.length === 0) {
+    return { supported: true, trashedCount: 0, skippedCount: 0 };
+  }
+  try {
+    const res = await callDriveApi<DriveTrashSummary>(
+      {
+        action: 'deleteFiles',
+        fileUrls: cleanUrls,
+      },
+      overrideUrl
+    );
+    return {
+      supported: true,
+      trashedCount: Number(res.trashedCount || 0),
+      skippedCount: Number(res.skippedCount || 0),
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('Unsupported POST action')) {
+      return { supported: false, trashedCount: 0, skippedCount: 0 };
+    }
+    throw err;
+  }
 }
 
 export interface UploadedDriveFileResult {

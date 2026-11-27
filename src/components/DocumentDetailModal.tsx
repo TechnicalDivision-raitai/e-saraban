@@ -58,6 +58,7 @@ export interface QuickDetailSavePayload {
   keptExistingAttachments: DocAttachment[];
   selectedFiles: File[];
   manualAttachments: DocAttachment[];
+  trashRemovedDriveFiles: boolean;
 }
 
 interface DocumentDetailModalProps {
@@ -228,6 +229,7 @@ export function DocumentDetailModal({
   const [manualFileUrl, setManualFileUrl] = useState('');
   const [manualFileName, setManualFileName] = useState('');
   const [attachmentUrlError, setAttachmentUrlError] = useState('');
+  const [trashRemovedDriveFiles, setTrashRemovedDriveFiles] = useState(true);
   const [projectSync, setProjectSync] = useState<ProjectSyncSelection>(() =>
     buildInitialProjectSync(doc, existingProjectSync)
   );
@@ -259,6 +261,7 @@ export function DocumentDetailModal({
     setManualFileUrl('');
     setManualFileName('');
     setAttachmentUrlError('');
+    setTrashRemovedDriveFiles(true);
     setCopiedLinkKey(null);
     if (copyTimerRef.current) {
       window.clearTimeout(copyTimerRef.current);
@@ -354,6 +357,8 @@ export function DocumentDetailModal({
     keptExistingAttachments,
     selectedFiles,
     manualAttachments: getCombinedManualAttachments(),
+    trashRemovedDriveFiles:
+      keptExistingAttachments.length < originalAttachments.length ? trashRemovedDriveFiles : false,
   });
 
   const handleSaveDetails = async () => {
@@ -831,6 +836,19 @@ export function DocumentDetailModal({
                         </div>
                       );
                     })}
+                    {keptExistingAttachments.length < originalAttachments.length && (
+                      <label className="flex items-start gap-2 p-2.5 rounded-xl bg-[#FAF9FC] border border-[#E5E2F0] cursor-pointer hover:bg-[#F1EFF7] transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={trashRemovedDriveFiles}
+                          onChange={(e) => setTrashRemovedDriveFiles(e.target.checked)}
+                          className="mt-0.5 w-3.5 h-3.5 accent-[#6B6293] rounded"
+                        />
+                        <span className="text-[11px] font-semibold text-[#242038] leading-snug">
+                          ย้ายไฟล์ที่นำออกใน Google Drive ลงถังขยะด้วย (เฉพาะไฟล์ในโฟลเดอร์ระบบ)
+                        </span>
+                      </label>
+                    )}
                   </div>
                 )}
 

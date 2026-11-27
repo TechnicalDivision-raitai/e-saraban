@@ -217,6 +217,123 @@ function getOrCreateFolder_() {
   return DriveApp.createFolder(DEFAULT_FOLDER_NAME);
 }
 
+function extractDriveFileId_(rawUrl) {
+  const text = String(rawUrl || '').trim();
+  if (!text) return '';
+
+  // Match /file/d/<ID> or /d/<ID>
+  var m = text.match(/\/d\/([a-zA-Z0-9_-]{15,})/);
+  if (m && m[1]) return m[1];
+
+  // Match ?id=<ID> or &id=<ID>
+  m = text.match(/[?&]id=([a-zA-Z0-9_-]{15,})/);
+  if (m && m[1]) return m[1];
+
+  // Direct Drive file ID
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(text)) return text;
+
+  return '';
+}
+
+function expandMultiAttachmentUrls_(rawInput) {
+  const list = Array.isArray(rawInput) ? rawInput : [rawInput];
+  const urls = [];
+  const seen = {};
+
+  function pushUrl(u) {
+    const clean = String(u || '').trim();
+    if (!clean || clean === '-' || seen[clean]) return;
+    seen[clean] = true;
+    urls.push(clean);
+  }
+
+  list.forEach(function (entry) {
+    const text = String(entry || '').trim();
+    if (!text) return;
+
+    var markerMatch = text.match(/[#&]saraban_multi=([^&]+)/);
+    if (markerMatch && markerMatch[1]) {
+      try {
+        var parsed = JSON.parse(decodeURIComponent(markerMatch[1]));
+        if (Array.isArray(parsed)) {
+          parsed.forEach(function (item) {
+            if (item && item.fileUrl) pushUrl(item.fileUrl);
+          });
+          return;
+        }
+      } catch (e) {}
+    }
+
+    pushUrl(text);
+  });
+
+  return urls;
+}
+
+function isFileInsideFolder_(file, targetFolderId) {
+  try {
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === targetFolderId) {
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function trashDriveFilesByUrls_(rawUrls) {
+  const urls = expandMultiAttachmentUrls_(rawUrls);
+  if (urls.length === 0) {
+    return { trashedCount: 0, skippedCount: 0, results: [] };
+  }
+
+  const folder = getOrCreateFolder_();
+  const folderId = folder.getId();
+  let trashedCount = 0;
+  let skippedCount = 0;
+  const results = [];
+  const seenFileIds = {};
+
+  urls.forEach(function (url) {
+    const fileId = extractDriveFileId_(url);
+    if (!fileId) {
+      skippedCount++;
+      results.push({ url: url, status: 'skipped_not_drive_url' });
+      return;
+    }
+    if (seenFileIds[fileId]) return;
+    seenFileIds[fileId] = true;
+
+    try {
+      const file = DriveApp.getFileById(fileId);
+      if (!isFileInsideFolder_(file, folderId)) {
+        skippedCount++;
+        results.push({ fileId: fileId, fileName: file.getName(), status: 'skipped_outside_folder' });
+        return;
+      }
+      if (!file.isTrashed()) {
+        file.setTrashed(true);
+      }
+      trashedCount++;
+      results.push({ fileId: fileId, fileName: file.getName(), status: 'trashed' });
+    } catch (err) {
+      skippedCount++;
+      results.push({
+        fileId: fileId,
+        status: 'error',
+        message: err && err.message ? err.message : String(err)
+      });
+    }
+  });
+
+  return {
+    trashedCount: trashedCount,
+    skippedCount: skippedCount,
+    results: results
+  };
+}
+
 function formatCellDate_(val, key) {
   if (val === null || val === undefined) return '';
   if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
@@ -410,9 +527,13 @@ function migrateLegacyDocumentsToTabs() {
   return { migrated: migrated };
 }
 
-function findRecordAcrossTabs_(ss, targetId) {
+function findRecordAcrossTabs_(ss, targetId, preferredType) {
   const idStr = String(targetId || '');
-  const types = Object.keys(TAB_CONFIGS);
+  const allTypes = Object.keys(TAB_CONFIGS);
+  const types = (preferredType && TAB_CONFIGS[preferredType])
+    ? [preferredType].concat(allTypes.filter(function (k) { return k !== preferredType; }))
+    : allTypes;
+
   for (var t = 0; t < types.length; t++) {
     const typeKey = types[t];
     const cfg = getTypeConfig_(typeKey);
@@ -527,6 +648,19 @@ function doPost(e) {
       });
     }
 
+    if (action === 'deleteFiles') {
+      const fileUrls = Array.isArray(payload.fileUrls)
+        ? payload.fileUrls
+        : (payload.fileUrl ? [payload.fileUrl] : []);
+      const res = trashDriveFilesByUrls_(fileUrls);
+      return jsonResponse_({
+        status: 'success',
+        trashedCount: res.trashedCount,
+        skippedCount: res.skippedCount,
+        results: res.results
+      });
+    }
+
     lock.waitLock(20000);
 
     if (action === 'reorganize') {
@@ -616,7 +750,16 @@ function doPost(e) {
         destSheet.appendRow(recordToSheetRow_(nextType, merged));
       }
 
-      return jsonResponse_({ status: 'success', id: targetId });
+      let driveTrashResult = null;
+      if (payload.trashDriveFiles && Array.isArray(payload.removedFileUrls) && payload.removedFileUrls.length > 0) {
+        driveTrashResult = trashDriveFilesByUrls_(payload.removedFileUrls);
+      }
+
+      return jsonResponse_({
+        status: 'success',
+        id: targetId,
+        driveTrash: driveTrashResult
+      });
     }
 
     if (action === 'delete') {
@@ -626,8 +769,23 @@ function doPost(e) {
       if (!found) {
         return jsonResponse_({ status: 'error', message: 'ไม่พบรายการเอกสาร ID: ' + targetId });
       }
+
+      let driveTrashResult = null;
+      if (payload.trashDriveFiles) {
+        const urlsToTrash = Array.isArray(payload.fileUrls) && payload.fileUrls.length > 0
+          ? payload.fileUrls
+          : (found.record.file_url ? [found.record.file_url] : []);
+        if (urlsToTrash.length > 0) {
+          driveTrashResult = trashDriveFilesByUrls_(urlsToTrash);
+        }
+      }
+
       found.sheet.deleteRow(found.rowNumber);
-      return jsonResponse_({ status: 'success', deletedId: targetId });
+      return jsonResponse_({
+        status: 'success',
+        deletedId: targetId,
+        driveTrash: driveTrashResult
+      });
     }
 
     return jsonResponse_({ status: 'error', message: 'Unsupported POST action: ' + action });
