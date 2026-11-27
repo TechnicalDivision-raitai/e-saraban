@@ -14,7 +14,7 @@
  *    แล้วกด "ส่งข้อมูลลง Sheet นี้เลย" ระบบจะจัดลงแท็บที่ตรงกับประเภทเอกสารให้อัตโนมัติ
  */
 
-const DRIVE_FOLDER_ID = ''; // ใส่ Folder ID ของ Google Drive (ถ้ามี) หรือเว้นว่างเพื่อสร้างอัตโนมัติ
+const DRIVE_FOLDER_ID = '1QC_Vd6cOG8MjknUtjDZhRbcNk5LlhsWK'; // ใส่ Folder ID ของ Google Drive (ถ้ามี) หรือเว้นว่างเพื่อสร้างอัตโนมัติ
 const DEFAULT_FOLDER_NAME = 'e-Saraban กองช่าง อบต.ไร่ใต้ - เอกสารแนบ';
 
 // ฟิลด์มาตรฐาน 28 ฟิลด์สำหรับสื่อสารกับหน้าเว็บ

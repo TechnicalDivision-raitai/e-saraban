@@ -1,0 +1,478 @@
+// ==================== CONFIGURATION ====================
+// ใส่ Folder ID ปลายทางบน Google Drive (หรือปล่อยว่าง '' เพื่อให้สร้างโฟลเดอร์ใหม่อัตโนมัติ)
+const DRIVE_FOLDER_ID = '';
+const DRIVE_FOLDER_NAME = 'e-Saraban กองช่าง อบต.ไร่ใต้';
+const ATTACHMENTS_FOLDER_NAME = 'ไฟล์แนบเอกสาร';
+
+// ชีตเดิมสำหรับดึงข้อมูลทั้งหมดมาตั้งต้นอัตโนมัติครั้งแรก (458+ รายการ)
+const OLD_SPREADSHEET_ID = '1nL0RAiZncYRvXhz1EY84qLzeoiqhjjMCC1nM52zjfHE';
+const OLD_SHEET_NAME = 'documents';
+
+const DB_FILE_NAME = 'esaraban_database.json';
+const SUMMARY_SHEET_TITLE = 'ทะเบียนเอกสาร e-Saraban กองช่าง อบต.ไร่ใต้';
+const CACHE_PREFIX = 'esaraban_drive_v3_';
+const CACHE_TTL_SECONDS = 21600; // 6 ชั่วโมง
+const CHUNK_SIZE = 38000;
+
+const ALL_FIELDS = [
+  'id', 'type', 'reg_no', 'year_str', 'central_reg_no', 'receive_date',
+  'sender', 'urgency', 'doc_number', 'doc_date', 'subject', 'status',
+  'assignee', 'due_date', 'ack_status', 'ack_time', 'file_name', 'file_url',
+  'memo_work', 'form_code', 'form_name', 'voucher_date', 'voucher_maker',
+  'voucher_no', 'voucher_category', 'voucher_payee', 'voucher_amount', 'voucher_project'
+];
+
+// ==================== กด RUN ฟังก์ชันนี้ 1 ครั้งเพื่อเปิดโฟลเดอร์ & ชีตใหม่ ====================
+function setupNewDriveAndSheet() {
+  const folder = getOrCreateMainFolder_();
+  getOrCreateAttachmentsFolder_(folder);
+  const records = loadOrMigrateDatabase_(folder);
+  const ss = getOrCreateSummarySheet_(folder);
+  syncSummarySheet_(records, ss);
+  Logger.log('สร้าง/อัปเดตสำเร็จ: โฟลเดอร์ = ' + folder.getUrl());
+  Logger.log('ชีตใหม่ (9 คอลัมน์) = ' + ss.getUrl());
+  Logger.log('จำนวนข้อมูลที่โอนย้าย = ' + records.length + ' รายการ');
+}
+
+// ==================== HTTP HANDLERS ====================
+function doGet(e) {
+  try {
+    const action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : 'list';
+    const mode = (e && e.parameter && e.parameter.mode) ? String(e.parameter.mode) : '';
+
+    if (action === 'syncSheet') {
+      const records = readRecordsFast_();
+      syncSummarySheet_(records);
+      return jsonResponse_({ status: 'success', count: records.length });
+    }
+
+    if (action === 'list') {
+      if (mode === 'compact') {
+        const compactRows = getCompactRowsFast_();
+        return jsonResponse_({
+          status: 'success',
+          format: 'compact',
+          count: compactRows.length,
+          headers: ALL_FIELDS,
+          rows: compactRows
+        });
+      }
+      const records = readRecordsFast_();
+      return jsonResponse_({ status: 'success', count: records.length, data: records });
+    }
+
+    return jsonResponse_({ status: 'error', message: 'Unknown action: ' + action });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: String(err && err.message ? err.message : err) });
+  }
+}
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  let hasLock = false;
+  try {
+    const body = JSON.parse((e && e.postData && e.postData.contents) ? e.postData.contents : '{}');
+    const action = body.action || '';
+
+    if (action === 'uploadFile') {
+      const uploaded = uploadAttachmentToDrive_(body.fileData, body.mimeType, body.fileName);
+      return jsonResponse_({
+        status: 'success',
+        fileId: uploaded.fileId,
+        fileUrl: uploaded.fileUrl
+      });
+    }
+
+    lock.waitLock(25000);
+    hasLock = true;
+    const records = readRecordsFast_();
+
+    if (action === 'insert') {
+      const clean = stripEmptyFields_(body.record || {});
+      records.push(clean);
+      saveAllAndSync_(records);
+      return jsonResponse_({ status: 'success', count: records.length });
+    }
+
+    if (action === 'insertBatch') {
+      const incoming = Array.isArray(body.records) ? body.records : [];
+      incoming.forEach(item => records.push(stripEmptyFields_(item)));
+      saveAllAndSync_(records);
+      return jsonResponse_({ status: 'success', inserted: incoming.length, count: records.length });
+    }
+
+    if (action === 'update') {
+      const targetId = String(body.id || '');
+      const updates = body.updates || {};
+      const idx = records.findIndex(r => String(r.id) === targetId);
+      if (idx === -1) {
+        return jsonResponse_({ status: 'error', message: 'ไม่พบข้อมูลรหัส: ' + targetId });
+      }
+      const merged = Object.assign({}, records[idx], updates);
+      records[idx] = stripEmptyFields_(merged);
+      saveAllAndSync_(records);
+      return jsonResponse_({ status: 'success' });
+    }
+
+    if (action === 'delete') {
+      const targetId = String(body.id || '');
+      const nextRecords = records.filter(r => String(r.id) !== targetId);
+      if (nextRecords.length === records.length) {
+        return jsonResponse_({ status: 'error', message: 'ไม่พบข้อมูลรหัส: ' + targetId });
+      }
+      saveAllAndSync_(nextRecords);
+      return jsonResponse_({ status: 'success', count: nextRecords.length });
+    }
+
+    return jsonResponse_({ status: 'error', message: 'Unknown POST action: ' + action });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: String(err && err.message ? err.message : err) });
+  } finally {
+    if (hasLock) lock.releaseLock();
+  }
+}
+
+// ==================== DRIVE DATABASE & CACHE ====================
+function readRecordsFast_() {
+  const cache = CacheService.getScriptCache();
+  const cachedJson = readChunkedCache_(cache, CACHE_PREFIX + 'rec_');
+  if (cachedJson) {
+    return JSON.parse(cachedJson);
+  }
+  const folder = getOrCreateMainFolder_();
+  const records = loadOrMigrateDatabase_(folder);
+  writeDatabaseCache_(records);
+  return records;
+}
+
+function getCompactRowsFast_() {
+  const cache = CacheService.getScriptCache();
+  const cachedJson = readChunkedCache_(cache, CACHE_PREFIX + 'cmp_');
+  if (cachedJson) {
+    return JSON.parse(cachedJson);
+  }
+  const records = readRecordsFast_();
+  return recordsToCompactRows_(records);
+}
+
+function saveAllAndSync_(records) {
+  const folder = getOrCreateMainFolder_();
+  const file = getOrCreateDbFile_(folder);
+  const jsonStr = JSON.stringify(records);
+  file.setContent(jsonStr);
+  writeDatabaseCache_(records, jsonStr);
+  syncSummarySheet_(records);
+}
+
+function loadOrMigrateDatabase_(folder) {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('DB_FILE_ID');
+  let file = null;
+  if (savedId) {
+    try { file = DriveApp.getFileById(savedId); } catch (e) { file = null; }
+  }
+  if (!file || file.isTrashed()) {
+    const it = folder.getFilesByName(DB_FILE_NAME);
+    if (it.hasNext()) {
+      file = it.next();
+      props.setProperty('DB_FILE_ID', file.getId());
+    }
+  }
+  if (file) {
+    const text = file.getBlob().getDataAsString('UTF-8').trim();
+    if (text) return JSON.parse(text);
+  }
+
+  // ยังไม่เคยมีไฟล์บน Drive -> ดึงข้อมูลจากชีตเดิมมาสร้างไฟล์ JSON บน Drive ให้อัตโนมัติ
+  const migrated = migrateRecordsFromOldSheet_();
+  const newFile = folder.createFile(DB_FILE_NAME, JSON.stringify(migrated), MimeType.PLAIN_TEXT);
+  props.setProperty('DB_FILE_ID', newFile.getId());
+  return migrated;
+}
+
+function getOrCreateDbFile_(folder) {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('DB_FILE_ID');
+  if (savedId) {
+    try {
+      const f = DriveApp.getFileById(savedId);
+      if (!f.isTrashed()) return f;
+    } catch (e) {}
+  }
+  const it = folder.getFilesByName(DB_FILE_NAME);
+  if (it.hasNext()) {
+    const f = it.next();
+    props.setProperty('DB_FILE_ID', f.getId());
+    return f;
+  }
+  const created = folder.createFile(DB_FILE_NAME, '[]', MimeType.PLAIN_TEXT);
+  props.setProperty('DB_FILE_ID', created.getId());
+  return created;
+}
+
+function migrateRecordsFromOldSheet_() {
+  if (!OLD_SPREADSHEET_ID) return [];
+  try {
+    const ss = SpreadsheetApp.openById(OLD_SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(OLD_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    const tz = ss.getSpreadsheetTimeZone() || 'Asia/Bangkok';
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h || '').trim());
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+    const out = [];
+    for (let r = 0; r < values.length; r++) {
+      const row = values[r];
+      if (row[0] === '' || row[0] === null || row[0] === undefined) continue;
+      const obj = {};
+      for (let c = 0; c < headers.length; c++) {
+        const key = headers[c];
+        if (!key) continue;
+        let val = row[c];
+        if (val instanceof Date) val = Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+        if (val !== '' && val !== null && val !== undefined) {
+          obj[key] = val;
+        }
+      }
+      out.push(stripEmptyFields_(obj));
+    }
+    return out;
+  } catch (e) {
+    return [];
+  }
+}
+
+// ==================== CLEAN 9-COLUMN SUMMARY SHEET ====================
+function getOrCreateSummarySheet_(folderInstance) {
+  const props = PropertiesService.getScriptProperties();
+  const savedSheetId = props.getProperty('SUMMARY_SHEET_ID');
+  if (savedSheetId) {
+    try {
+      const f = DriveApp.getFileById(savedSheetId);
+      if (!f.isTrashed()) return SpreadsheetApp.openById(savedSheetId);
+    } catch (e) {}
+  }
+
+  const folder = folderInstance || getOrCreateMainFolder_();
+  const existing = folder.getFilesByName(SUMMARY_SHEET_TITLE);
+  while (existing.hasNext()) {
+    const f = existing.next();
+    if (!f.isTrashed() && f.getMimeType() === MimeType.GOOGLE_SHEETS) {
+      props.setProperty('SUMMARY_SHEET_ID', f.getId());
+      return SpreadsheetApp.openById(f.getId());
+    }
+  }
+
+  const ss = SpreadsheetApp.create(SUMMARY_SHEET_TITLE);
+  const ssFile = DriveApp.getFileById(ss.getId());
+  ssFile.moveTo(folder);
+  props.setProperty('SUMMARY_SHEET_ID', ss.getId());
+  return ss;
+}
+
+function syncSummarySheet_(records, ssInstance) {
+  const ss = ssInstance || getOrCreateSummarySheet_();
+  let sheet = ss.getSheetByName('ทะเบียนทั้งหมด');
+  if (!sheet) {
+    sheet = ss.getSheets()[0];
+    sheet.setName('ทะเบียนทั้งหมด');
+  }
+
+  const headers = [
+    'ประเภท',
+    'ปี',
+    'เลขทะเบียน / อ้างอิง',
+    'เลขที่ / วันที่เอกสาร',
+    'เรื่อง / ชื่อโครงการ',
+    'ผู้เกี่ยวข้อง / รายละเอียด',
+    'ผู้รับผิดชอบ',
+    'สถานะ',
+    'ไฟล์แนบ (Google Drive)'
+  ];
+
+  const rows = records.map(r => {
+    const typeLabel = getThaiTypeLabel_(r.type);
+    const refNo = formatRefNo_(r);
+    const docInfo = formatDocDateInfo_(r);
+    const subject = r.subject || r.voucher_project || r.form_name || '-';
+    const details = formatDetailsInfo_(r);
+    const assignee = r.assignee || '-';
+    const statusText = (r.status || '-') + (r.ack_status && r.ack_status !== 'รอรับทราบ' ? ' (' + r.ack_status + ')' : '');
+    const fileCell = formatDriveLinkCell_(r.file_name, r.file_url);
+    return [typeLabel, r.year_str || '-', refNo, docInfo, subject, details, assignee, statusText, fileCell];
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length)
+    .setValues([headers])
+    .setBackground('#0f172a')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows).setVerticalAlignment('top');
+  }
+
+  // จัดความกว้างคอลัมน์ให้อ่านง่าย
+  const widths = [120, 65, 145, 165, 300, 260, 140, 145, 190];
+  widths.forEach((w, idx) => sheet.setColumnWidth(idx + 1, w));
+}
+
+function getThaiTypeLabel_(t) {
+  const map = {
+    incoming: 'หนังสือรับ',
+    outgoing: 'หนังสือส่ง',
+    orders: 'คำสั่ง',
+    memos: 'บันทึกข้อความ',
+    vouchers: 'งานฎีกา',
+    forms: 'แบบฟอร์ม'
+  };
+  return map[t] || t || '-';
+}
+
+function formatRefNo_(r) {
+  if (r.type === 'vouchers') return r.voucher_no ? 'ผู้เบิก: ' + r.voucher_no : '-';
+  if (r.type === 'forms') return r.form_code || '-';
+  const reg = (r.reg_no && r.reg_no !== '-') ? String(r.reg_no) : '';
+  const central = (r.central_reg_no && r.central_reg_no !== '-') ? 'กลาง ' + r.central_reg_no : '';
+  return [reg, central].filter(Boolean).join(' | ') || '-';
+}
+
+function formatDocDateInfo_(r) {
+  const num = r.doc_number || '';
+  const date = r.receive_date && r.receive_date !== '-' ? r.receive_date : (r.voucher_date || r.doc_date || '');
+  return [num, date].filter(Boolean).join(' | ') || '-';
+}
+
+function formatDetailsInfo_(r) {
+  if (r.type === 'vouchers') {
+    const amt = Number(r.voucher_amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    return [r.voucher_payee, r.voucher_category, amt + ' บาท'].filter(Boolean).join(' • ');
+  }
+  if (r.type === 'forms' || r.type === 'memos') {
+    return [r.memo_work, r.sender].filter(v => v && v !== '-').join(' • ') || '-';
+  }
+  const urg = (r.urgency && r.urgency !== 'ปกติ') ? '[' + r.urgency + '] ' : '';
+  return urg + (r.sender || '-');
+}
+
+function formatDriveLinkCell_(name, url) {
+  if (!url || String(url).trim() === '') return '-';
+  const safeUrl = String(url).replace(/"/g, '""');
+  const safeLabel = ('📎 ' + (name || 'เปิดไฟล์แนบ')).replace(/"/g, '""');
+  return '=HYPERLINK("' + safeUrl + '", "' + safeLabel + '")';
+}
+
+// ==================== FOLDERS & UPLOAD ====================
+function getOrCreateMainFolder_() {
+  if (DRIVE_FOLDER_ID && String(DRIVE_FOLDER_ID).trim() !== '') {
+    return DriveApp.getFolderById(String(DRIVE_FOLDER_ID).trim());
+  }
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('MAIN_FOLDER_ID');
+  if (savedId) {
+    try {
+      const f = DriveApp.getFolderById(savedId);
+      if (!f.isTrashed()) return f;
+    } catch (e) {}
+  }
+  const folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
+  if (folders.hasNext()) {
+    const f = folders.next();
+    props.setProperty('MAIN_FOLDER_ID', f.getId());
+    return f;
+  }
+  const created = DriveApp.createFolder(DRIVE_FOLDER_NAME);
+  props.setProperty('MAIN_FOLDER_ID', created.getId());
+  return created;
+}
+
+function getOrCreateAttachmentsFolder_(mainFolderInstance) {
+  const main = mainFolderInstance || getOrCreateMainFolder_();
+  const it = main.getFoldersByName(ATTACHMENTS_FOLDER_NAME);
+  if (it.hasNext()) return it.next();
+  return main.createFolder(ATTACHMENTS_FOLDER_NAME);
+}
+
+function uploadAttachmentToDrive_(base64Data, mimeType, fileName) {
+  if (!base64Data) throw new Error('ไม่พบข้อมูลไฟล์สำหรับอัปโหลด');
+  const folder = getOrCreateAttachmentsFolder_();
+  const decoded = Utilities.base64Decode(base64Data);
+  const blob = Utilities.newBlob(decoded, mimeType || 'application/octet-stream', fileName || ('attachment_' + Date.now()));
+  const file = folder.createFile(blob);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {}
+  return {
+    fileId: file.getId(),
+    fileUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view?usp=sharing'
+  };
+}
+
+// ==================== HELPERS ====================
+function stripEmptyFields_(obj) {
+  const clean = {};
+  ALL_FIELDS.forEach(k => {
+    const v = obj[k];
+    if (k === 'id') {
+      const num = Number(v);
+      clean[k] = (!isNaN(num) && v !== '' && v !== null && v !== undefined) ? num : (v || Date.now());
+    } else if (k === 'voucher_amount') {
+      const amt = Number(v || 0);
+      if (amt !== 0) clean[k] = amt;
+    } else if (v !== undefined && v !== null && v !== '') {
+      clean[k] = v;
+    }
+  });
+  return clean;
+}
+
+function recordsToCompactRows_(records) {
+  return records.map(rec => {
+    const row = ALL_FIELDS.map(k => (rec[k] !== undefined && rec[k] !== null ? rec[k] : ''));
+    while (row.length > 1 && row[row.length - 1] === '') row.pop();
+    return row;
+  });
+}
+
+function writeDatabaseCache_(records, precomputedRecJson) {
+  try {
+    const cache = CacheService.getScriptCache();
+    writeChunkedCache_(cache, CACHE_PREFIX + 'rec_', precomputedRecJson || JSON.stringify(records));
+    writeChunkedCache_(cache, CACHE_PREFIX + 'cmp_', JSON.stringify(recordsToCompactRows_(records)));
+  } catch (e) {}
+}
+
+function writeChunkedCache_(cache, prefix, str) {
+  const chunks = [];
+  for (let i = 0; i < str.length; i += CHUNK_SIZE) {
+    chunks.push(str.slice(i, i + CHUNK_SIZE));
+  }
+  const payload = {};
+  payload[prefix + 'n'] = String(chunks.length);
+  chunks.forEach((c, i) => { payload[prefix + i] = c; });
+  cache.putAll(payload, CACHE_TTL_SECONDS);
+}
+
+function readChunkedCache_(cache, prefix) {
+  const nStr = cache.get(prefix + 'n');
+  if (!nStr) return null;
+  const n = parseInt(nStr, 10);
+  if (n === 0) return '[]';
+  const keys = [];
+  for (let i = 0; i < n; i++) keys.push(prefix + i);
+  const map = cache.getAll(keys);
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    if (!map[prefix + i]) return null;
+    out += map[prefix + i];
+  }
+  return out;
+}
+
+function jsonResponse_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}

@@ -1,0 +1,799 @@
+/**
+ * Google Apps Script Backend สำหรับระบบสารบรรณอิเล็กทรอนิกส์ กองช่าง อบต.ไร่ใต้ (e-Saraban)
+ * เวอร์ชันจัดหน้าใหม่: แยกแท็บตามประเภทเอกสาร (6 แท็บ) คอลัมน์น้อย กระชับ พอดีหน้าจอ ไม่ต้องเลื่อนแถบหา
+ *
+ * วิธีติดตั้ง:
+ * 1. สร้าง Google Sheet ใหม่ (หรือเปิด Sheet ที่ต้องการใช้เก็บฐานข้อมูล)
+ * 2. ไปที่ ส่วนขยาย (Extensions) > Apps Script แล้ววางโค้ดนี้ลงในไฟล์ Code.gs
+ * 3. (ไม่บังคับ) หากต้องการระบุโฟลเดอร์ Google Drive เอง ให้ใส่ Folder ID ใน DRIVE_FOLDER_ID
+ *    หากเว้นว่างไว้ ระบบจะสร้างโฟลเดอร์ "e-Saraban กองช่าง อบต.ไร่ใต้ - เอกสารแนบ" ให้อัตโนมัติ
+ * 4. กด Deploy > New deployment > Type: Web app
+ *    - Execute as: Me (ฉัน)
+ *    - Who has access: Anyone (ทุกคน)
+ * 5. คัดลอก Web App URL (.../exec) ไปวางในหน้า "ตั้งค่า Apps Script" ของระบบ
+ *    แล้วกด "ส่งข้อมูลลง Sheet นี้เลย" ระบบจะจัดลงแท็บที่ตรงกับประเภทเอกสารให้อัตโนมัติ
+ */
+
+const DRIVE_FOLDER_ID = '1QC_Vd6cOG8MjknUtjDZhRbcNk5LlhsWK'; // ใส่ Folder ID ของ Google Drive (ถ้ามี) หรือเว้นว่างเพื่อสร้างอัตโนมัติ
+const DEFAULT_FOLDER_NAME = 'e-Saraban กองช่าง อบต.ไร่ใต้ - เอกสารแนบ';
+
+// ฟิลด์มาตรฐาน 28 ฟิลด์สำหรับสื่อสารกับหน้าเว็บ
+const CANONICAL_FIELDS = [
+  'id', 'type', 'reg_no', 'year_str', 'central_reg_no', 'receive_date',
+  'sender', 'urgency', 'doc_number', 'doc_date', 'subject', 'status',
+  'assignee', 'due_date', 'ack_status', 'ack_time', 'file_name', 'file_url',
+  'memo_work', 'form_code', 'form_name', 'voucher_date', 'voucher_maker',
+  'voucher_no', 'voucher_category', 'voucher_payee', 'voucher_amount', 'voucher_project'
+];
+
+// โครงสร้างแท็บแยกประเภท (ซ่อนคอลัมน์ ID เพื่อความสะอาดตา + รวมลิงก์ไฟล์เป็นคอลัมน์เดียว)
+const TAB_CONFIGS = {
+  incoming: {
+    sheetName: 'หนังสือรับ',
+    headerColor: '#1E3A8A',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'reg_no', label: 'เลขรับ', width: 56, align: 'center', text: true },
+      { key: 'year_str', label: 'ปี', width: 52, align: 'center', text: true },
+      { key: 'central_reg_no', label: 'เลขรับกลาง', width: 88, text: true },
+      { key: 'receive_date', label: 'วันที่รับ', width: 86, align: 'center' },
+      { key: 'doc_number', label: 'เลขที่หนังสือ', width: 105, text: true },
+      { key: 'doc_date', label: 'ลงวันที่', width: 86, align: 'center' },
+      { key: 'subject', label: 'เรื่อง', width: 220, wrap: true },
+      { key: 'sender', label: 'ผู้ส่ง / หน่วยงาน', width: 135, wrap: true },
+      { key: 'urgency', label: 'เร่งด่วน', width: 72, align: 'center' },
+      { key: 'status', label: 'สถานะ', width: 92, align: 'center' },
+      { key: 'assignee', label: 'ผู้รับผิดชอบ', width: 98 },
+      { key: 'due_date', label: 'กำหนดเสร็จ', width: 86, align: 'center' },
+      { key: '_ack', label: 'รับทราบ', width: 108, align: 'center' },
+      { key: '_file', label: 'ไฟล์แนบ', width: 92, align: 'center' }
+    ]
+  },
+  outgoing: {
+    sheetName: 'หนังสือส่ง',
+    headerColor: '#065F46',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'year_str', label: 'ปี', width: 58, align: 'center', text: true },
+      { key: 'doc_number', label: 'เลขที่หนังสือส่ง', width: 125, text: true },
+      { key: 'doc_date', label: 'ลงวันที่', width: 92, align: 'center' },
+      { key: 'subject', label: 'เรื่อง', width: 280, wrap: true },
+      { key: 'sender', label: 'ผู้รับ / หน่วยงาน', width: 180, wrap: true },
+      { key: 'status', label: 'สถานะ', width: 105, align: 'center' },
+      { key: 'assignee', label: 'ผู้รับผิดชอบ', width: 110 },
+      { key: 'due_date', label: 'กำหนดเสร็จ', width: 92, align: 'center' },
+      { key: '_file', label: 'ไฟล์แนบ', width: 100, align: 'center' }
+    ]
+  },
+  orders: {
+    sheetName: 'คำสั่ง',
+    headerColor: '#92400E',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'year_str', label: 'ปี', width: 58, align: 'center', text: true },
+      { key: 'doc_number', label: 'เลขที่คำสั่ง', width: 125, text: true },
+      { key: 'doc_date', label: 'ลงวันที่', width: 95, align: 'center' },
+      { key: 'subject', label: 'เรื่องคำสั่ง', width: 340, wrap: true },
+      { key: 'status', label: 'สถานะ', width: 105, align: 'center' },
+      { key: 'assignee', label: 'ผู้รับผิดชอบ', width: 115 },
+      { key: 'due_date', label: 'กำหนดเสร็จ', width: 95, align: 'center' },
+      { key: '_file', label: 'ไฟล์แนบ', width: 100, align: 'center' }
+    ]
+  },
+  memos: {
+    sheetName: 'บันทึกข้อความ',
+    headerColor: '#5B21B6',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'year_str', label: 'ปีงบฯ', width: 62, align: 'center', text: true },
+      { key: 'memo_work', label: 'งาน', width: 105 },
+      { key: 'doc_number', label: 'เลขที่บันทึก', width: 115, text: true },
+      { key: 'doc_date', label: 'ลงวันที่', width: 90, align: 'center' },
+      { key: 'sender', label: 'เรียน', width: 155, wrap: true },
+      { key: 'subject', label: 'เรื่อง', width: 250, wrap: true },
+      { key: 'status', label: 'สถานะ', width: 100, align: 'center' },
+      { key: 'assignee', label: 'ผู้รับผิดชอบ', width: 105 },
+      { key: '_file', label: 'ไฟล์แนบ', width: 95, align: 'center' }
+    ]
+  },
+  vouchers: {
+    sheetName: 'งานฎีกา',
+    headerColor: '#9F1239',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'year_str', label: 'ปีงบฯ', width: 60, align: 'center', text: true },
+      { key: 'voucher_date', label: 'วันที่จัดทำ', width: 90, align: 'center' },
+      { key: 'voucher_no', label: 'เลขที่ผู้เบิก', width: 110, text: true },
+      { key: 'voucher_category', label: 'ประเภทฎีกา', width: 120, wrap: true },
+      { key: 'voucher_project', label: 'ชื่อโครงการ', width: 250, wrap: true },
+      { key: 'voucher_payee', label: 'ผู้รับเงิน', width: 145, wrap: true },
+      { key: 'voucher_amount', label: 'จำนวนเงิน (บาท)', width: 115, align: 'right', currency: true },
+      { key: 'voucher_maker', label: 'ผู้จัดทำ', width: 110 },
+      { key: 'status', label: 'สถานะ', width: 95, align: 'center' },
+      { key: '_file', label: 'ไฟล์แนบ', width: 90, align: 'center' }
+    ]
+  },
+  forms: {
+    sheetName: 'แบบฟอร์ม',
+    headerColor: '#155E75',
+    columns: [
+      { key: 'id', label: 'ID', width: 70, hidden: true },
+      { key: 'memo_work', label: 'งาน', width: 160 },
+      { key: 'form_code', label: 'เลขที่แบบ', width: 140, text: true },
+      { key: 'form_name', label: 'ชื่อแบบฟอร์ม', width: 380, wrap: true },
+      { key: '_file', label: 'ไฟล์แนบ', width: 120, align: 'center' }
+    ]
+  }
+};
+
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('e-Saraban')
+      .addItem('สร้างและจัดรูปแบบแท็บทั้ง 6 ประเภท', 'setupAllFormattedTabs')
+      .addItem('ย้ายข้อมูลจากแท็บ Documents เดิมมาจัดหน้าใหม่', 'migrateLegacyDocumentsToTabs')
+      .addToUi();
+  } catch (e) {}
+}
+
+function setupAllFormattedTabs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  Object.keys(TAB_CONFIGS).forEach(function (typeKey) {
+    getOrCreateTypedSheet_(ss, typeKey);
+  });
+}
+
+function getTypeConfig_(type) {
+  return TAB_CONFIGS[type] || TAB_CONFIGS.incoming;
+}
+
+function getOrCreateTypedSheet_(ss, type) {
+  const cfg = getTypeConfig_(type);
+  let sheet = ss.getSheetByName(cfg.sheetName);
+  let isNewOrEmpty = false;
+
+  if (!sheet) {
+    sheet = ss.insertSheet(cfg.sheetName);
+    isNewOrEmpty = true;
+  } else if (sheet.getLastRow() === 0) {
+    isNewOrEmpty = true;
+  }
+
+  if (isNewOrEmpty) {
+    const labels = cfg.columns.map(function (c) { return c.label; });
+    sheet.getRange(1, 1, 1, labels.length).setValues([labels]);
+    applySheetDesign_(sheet, cfg);
+  }
+  return sheet;
+}
+
+function applySheetDesign_(sheet, cfg) {
+  const colCount = cfg.columns.length;
+  sheet.setFrozenRows(1);
+
+  const headerRange = sheet.getRange(1, 1, 1, colCount);
+  headerRange
+    .setBackground(cfg.headerColor || '#312E81')
+    .setFontColor('#FFFFFF')
+    .setFontWeight('bold')
+    .setFontSize(10)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  sheet.setRowHeight(1, 32);
+
+  cfg.columns.forEach(function (col, idx) {
+    const colNum = idx + 1;
+    if (col.width) {
+      sheet.setColumnWidth(colNum, col.width);
+    }
+    if (col.hidden) {
+      try { sheet.hideColumns(colNum); } catch (e) {}
+    }
+    const dataRange = sheet.getRange(2, colNum, Math.max(1, sheet.getMaxRows() - 1), 1);
+    if (col.text) {
+      dataRange.setNumberFormat('@');
+    } else if (col.currency) {
+      dataRange.setNumberFormat('#,##0.00');
+    }
+    if (col.align) {
+      dataRange.setHorizontalAlignment(col.align);
+    }
+    if (col.wrap) {
+      dataRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    }
+    dataRange.setVerticalAlignment('middle');
+  });
+}
+
+function getOrCreateFolder_() {
+  if (DRIVE_FOLDER_ID && String(DRIVE_FOLDER_ID).trim() !== '') {
+    return DriveApp.getFolderById(String(DRIVE_FOLDER_ID).trim());
+  }
+  const folders = DriveApp.getFoldersByName(DEFAULT_FOLDER_NAME);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(DEFAULT_FOLDER_NAME);
+}
+
+function extractDriveFileId_(rawUrl) {
+  const text = String(rawUrl || '').trim();
+  if (!text) return '';
+
+  // Match /file/d/<ID> or /d/<ID>
+  var m = text.match(/\/d\/([a-zA-Z0-9_-]{15,})/);
+  if (m && m[1]) return m[1];
+
+  // Match ?id=<ID> or &id=<ID>
+  m = text.match(/[?&]id=([a-zA-Z0-9_-]{15,})/);
+  if (m && m[1]) return m[1];
+
+  // Direct Drive file ID
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(text)) return text;
+
+  return '';
+}
+
+function expandMultiAttachmentUrls_(rawInput) {
+  const list = Array.isArray(rawInput) ? rawInput : [rawInput];
+  const urls = [];
+  const seen = {};
+
+  function pushUrl(u) {
+    const clean = String(u || '').trim();
+    if (!clean || clean === '-' || seen[clean]) return;
+    seen[clean] = true;
+    urls.push(clean);
+  }
+
+  list.forEach(function (entry) {
+    const text = String(entry || '').trim();
+    if (!text) return;
+
+    var markerMatch = text.match(/[#&]saraban_multi=([^&]+)/);
+    if (markerMatch && markerMatch[1]) {
+      try {
+        var parsed = JSON.parse(decodeURIComponent(markerMatch[1]));
+        if (Array.isArray(parsed)) {
+          parsed.forEach(function (item) {
+            if (item && item.fileUrl) pushUrl(item.fileUrl);
+          });
+          return;
+        }
+      } catch (e) {}
+    }
+
+    pushUrl(text);
+  });
+
+  return urls;
+}
+
+function isFileInsideFolder_(file, targetFolderId) {
+  try {
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === targetFolderId) {
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function trashDriveFilesByUrls_(rawUrls) {
+  const urls = expandMultiAttachmentUrls_(rawUrls);
+  if (urls.length === 0) {
+    return { trashedCount: 0, skippedCount: 0, results: [] };
+  }
+
+  const folder = getOrCreateFolder_();
+  const folderId = folder.getId();
+  let trashedCount = 0;
+  let skippedCount = 0;
+  const results = [];
+  const seenFileIds = {};
+
+  urls.forEach(function (url) {
+    const fileId = extractDriveFileId_(url);
+    if (!fileId) {
+      skippedCount++;
+      results.push({ url: url, status: 'skipped_not_drive_url' });
+      return;
+    }
+    if (seenFileIds[fileId]) return;
+    seenFileIds[fileId] = true;
+
+    try {
+      const file = DriveApp.getFileById(fileId);
+      if (!isFileInsideFolder_(file, folderId)) {
+        skippedCount++;
+        results.push({ fileId: fileId, fileName: file.getName(), status: 'skipped_outside_folder' });
+        return;
+      }
+      if (!file.isTrashed()) {
+        file.setTrashed(true);
+      }
+      trashedCount++;
+      results.push({ fileId: fileId, fileName: file.getName(), status: 'trashed' });
+    } catch (err) {
+      skippedCount++;
+      results.push({
+        fileId: fileId,
+        status: 'error',
+        message: err && err.message ? err.message : String(err)
+      });
+    }
+  });
+
+  return {
+    trashedCount: trashedCount,
+    skippedCount: skippedCount,
+    results: results
+  };
+}
+
+function formatCellDate_(val, key) {
+  if (val === null || val === undefined) return '';
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    if (key === 'receive_date' || key === 'doc_date' || key === 'due_date' || key === 'voucher_date') {
+      return Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd');
+    }
+    return Utilities.formatDate(val, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm');
+  }
+  return val;
+}
+
+function buildAckDisplay_(record) {
+  const status = String(record.ack_status || 'รอรับทราบ').trim();
+  const time = String(record.ack_time || '').trim();
+  if (status === 'รับทราบแล้ว' && time && time !== '-') {
+    return 'รับทราบแล้ว (' + time + ')';
+  }
+  return status || 'รอรับทราบ';
+}
+
+function parseAckDisplay_(val) {
+  const text = String(val || '').trim();
+  if (!text) return { ack_status: 'รอรับทราบ', ack_time: '-' };
+  if (text.indexOf('รับทราบแล้ว') === 0) {
+    const m = text.match(/^รับทราบแล้ว\s*\((.+)\)$/);
+    return { ack_status: 'รับทราบแล้ว', ack_time: m ? m[1].trim() : '-' };
+  }
+  return { ack_status: text, ack_time: '-' };
+}
+
+function buildFileFormula_(record) {
+  const url = String(record.file_url || '').trim();
+  const name = String(record.file_name || '').trim();
+  if (url) {
+    const safeUrl = url.replace(/"/g, '%22');
+    const safeName = (name || 'เปิดไฟล์').replace(/"/g, "'");
+    return '=HYPERLINK("' + safeUrl + '","' + safeName + '")';
+  }
+  return name || '';
+}
+
+function parseFileCell_(value, formula) {
+  const f = String(formula || '').trim();
+  if (f) {
+    const m = f.match(/^=HYPERLINK\("([^"]*)","([^"]*)"\)/i);
+    if (m) {
+      return { file_url: m[1], file_name: m[2] };
+    }
+  }
+  const v = String(value || '').trim();
+  if (!v) return { file_url: '', file_name: '' };
+  if (v.indexOf('http://') === 0 || v.indexOf('https://') === 0) {
+    return { file_url: v, file_name: 'เปิดไฟล์' };
+  }
+  return { file_url: '', file_name: v };
+}
+
+function recordToSheetRow_(type, record) {
+  const cfg = getTypeConfig_(type);
+  return cfg.columns.map(function (col) {
+    if (col.key === '_ack') return buildAckDisplay_(record);
+    if (col.key === '_file') return buildFileFormula_(record);
+    const val = record[col.key];
+    return val !== undefined && val !== null ? val : '';
+  });
+}
+
+function sheetRowToRecord_(type, rowValues, rowFormulas) {
+  const cfg = getTypeConfig_(type);
+  const rec = { type: type };
+
+  cfg.columns.forEach(function (col, idx) {
+    if (col.key === '_ack') {
+      const ack = parseAckDisplay_(rowValues[idx]);
+      rec.ack_status = ack.ack_status;
+      rec.ack_time = ack.ack_time;
+    } else if (col.key === '_file') {
+      const file = parseFileCell_(rowValues[idx], rowFormulas[idx]);
+      rec.file_name = file.file_name;
+      rec.file_url = file.file_url;
+    } else {
+      rec[col.key] = formatCellDate_(rowValues[idx], col.key);
+    }
+  });
+
+  if (!rec.ack_status) rec.ack_status = 'รอรับทราบ';
+  if (!rec.ack_time) rec.ack_time = '-';
+  return rec;
+}
+
+function readTypedSheetRecords_(ss, type) {
+  const cfg = getTypeConfig_(type);
+  const sheet = ss.getSheetByName(cfg.sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+
+  const lastRow = sheet.getLastRow();
+  const colCount = cfg.columns.length;
+  const range = sheet.getRange(2, 1, lastRow - 1, colCount);
+  const values = range.getValues();
+  const formulas = range.getFormulas();
+  const records = [];
+
+  for (var i = 0; i < values.length; i++) {
+    const row = values[i];
+    const hasData = row.some(function (cell) {
+      return cell !== '' && cell !== null && cell !== undefined;
+    });
+    if (!hasData) continue;
+    records.push(sheetRowToRecord_(type, row, formulas[i]));
+  }
+  return records;
+}
+
+function readLegacyDocumentsSheet_(ss) {
+  const legacySheet = ss.getSheetByName('Documents');
+  if (!legacySheet || legacySheet.getLastRow() <= 1) return [];
+  const lastRow = legacySheet.getLastRow();
+  const lastCol = legacySheet.getLastColumn();
+  const headers = legacySheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
+    return String(h || '').trim();
+  });
+  const values = legacySheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const list = [];
+
+  values.forEach(function (row) {
+    if (!row.some(function (c) { return c !== '' && c !== null && c !== undefined; })) return;
+    const obj = {};
+    headers.forEach(function (key, idx) {
+      if (key) obj[key] = formatCellDate_(row[idx], key);
+    });
+    list.push(obj);
+  });
+  return list;
+}
+
+function readAllRecords_(ss) {
+  const seenIds = {};
+  const all = [];
+
+  Object.keys(TAB_CONFIGS).forEach(function (typeKey) {
+    const rows = readTypedSheetRecords_(ss, typeKey);
+    rows.forEach(function (rec) {
+      const idStr = String(rec.id || '');
+      if (idStr) seenIds[idStr] = true;
+      all.push(rec);
+    });
+  });
+
+  // รองรับอ่านข้อมูลเก่าจากแท็บ Documents กรณีที่ยังไม่ได้ย้าย
+  const legacyRows = readLegacyDocumentsSheet_(ss);
+  legacyRows.forEach(function (rec) {
+    const idStr = String(rec.id || '');
+    if (idStr && seenIds[idStr]) return;
+    if (idStr) seenIds[idStr] = true;
+    all.push(rec);
+  });
+
+  return all;
+}
+
+function migrateLegacyDocumentsToTabs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const legacyRows = readLegacyDocumentsSheet_(ss);
+  if (legacyRows.length === 0) return { migrated: 0 };
+
+  const grouped = {};
+  legacyRows.forEach(function (rec) {
+    const t = TAB_CONFIGS[rec.type] ? rec.type : 'incoming';
+    if (!grouped[t]) grouped[t] = [];
+    grouped[t].push(rec);
+  });
+
+  let migrated = 0;
+  Object.keys(grouped).forEach(function (typeKey) {
+    const sheet = getOrCreateTypedSheet_(ss, typeKey);
+    const existing = readTypedSheetRecords_(ss, typeKey);
+    const existingIds = {};
+    existing.forEach(function (r) { if (r.id) existingIds[String(r.id)] = true; });
+
+    const toInsert = grouped[typeKey].filter(function (r) {
+      return !r.id || !existingIds[String(r.id)];
+    });
+    if (toInsert.length === 0) return;
+
+    const rows = toInsert.map(function (r) { return recordToSheetRow_(typeKey, r); });
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+    migrated += rows.length;
+  });
+
+  return { migrated: migrated };
+}
+
+function findRecordAcrossTabs_(ss, targetId, preferredType) {
+  const idStr = String(targetId || '');
+  const allTypes = Object.keys(TAB_CONFIGS);
+  const types = (preferredType && TAB_CONFIGS[preferredType])
+    ? [preferredType].concat(allTypes.filter(function (k) { return k !== preferredType; }))
+    : allTypes;
+
+  for (var t = 0; t < types.length; t++) {
+    const typeKey = types[t];
+    const cfg = getTypeConfig_(typeKey);
+    const sheet = ss.getSheetByName(cfg.sheetName);
+    if (!sheet || sheet.getLastRow() <= 1) continue;
+
+    const lastRow = sheet.getLastRow();
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var r = 0; r < ids.length; r++) {
+      if (String(ids[r][0]) === idStr) {
+        const rowNumber = r + 2;
+        const range = sheet.getRange(rowNumber, 1, 1, cfg.columns.length);
+        const rec = sheetRowToRecord_(typeKey, range.getValues()[0], range.getFormulas()[0]);
+        return { sheet: sheet, type: typeKey, rowNumber: rowNumber, record: rec };
+      }
+    }
+  }
+  return null;
+}
+
+function jsonResponse_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = params.action || 'list';
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === 'ping') {
+      setupAllFormattedTabs();
+      const folder = getOrCreateFolder_();
+      const records = readAllRecords_(ss);
+      return jsonResponse_({
+        status: 'success',
+        message: 'เชื่อมต่อและจัดรูปแบบ 6 แท็บทะเบียนเอกสารสำเร็จ',
+        sheetName: 'แยก 6 แท็บ (หนังสือรับ, หนังสือส่ง, คำสั่ง, บันทึกฯ, งานฎีกา, แบบฟอร์ม)',
+        rowCount: records.length,
+        folderName: folder.getName(),
+        folderId: folder.getId()
+      });
+    }
+
+    if (action === 'list') {
+      const records = readAllRecords_(ss);
+      if (params.mode === 'compact') {
+        const rows = records.map(function (rec) {
+          return CANONICAL_FIELDS.map(function (key) {
+            return rec[key] !== undefined && rec[key] !== null ? rec[key] : '';
+          });
+        });
+        return jsonResponse_({
+          status: 'success',
+          format: 'compact',
+          headers: CANONICAL_FIELDS,
+          rows: rows
+        });
+      }
+      return jsonResponse_({ status: 'success', data: records });
+    }
+
+    return jsonResponse_({ status: 'error', message: 'Unsupported GET action: ' + action });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err && err.message ? err.message : String(err) });
+  }
+}
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    const rawBody = (e && e.postData && e.postData.contents) ? e.postData.contents : '{}';
+    const payload = JSON.parse(rawBody);
+    const action = payload.action;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === 'ping') {
+      setupAllFormattedTabs();
+      const folder = getOrCreateFolder_();
+      const records = readAllRecords_(ss);
+      return jsonResponse_({
+        status: 'success',
+        message: 'เชื่อมต่อและจัดรูปแบบ 6 แท็บทะเบียนเอกสารสำเร็จ',
+        sheetName: 'แยก 6 แท็บ (หนังสือรับ, หนังสือส่ง, คำสั่ง, บันทึกฯ, งานฎีกา, แบบฟอร์ม)',
+        rowCount: records.length,
+        folderName: folder.getName(),
+        folderId: folder.getId()
+      });
+    }
+
+    if (action === 'uploadFile') {
+      if (!payload.fileData || !payload.fileName) {
+        return jsonResponse_({ status: 'error', message: 'ไม่พบข้อมูลไฟล์สำหรับอัปโหลด' });
+      }
+      const folder = getOrCreateFolder_();
+      const decoded = Utilities.base64Decode(payload.fileData);
+      const mimeType = payload.mimeType || 'application/octet-stream';
+      const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
+      const file = folder.createFile(blob);
+
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (shareErr) {}
+
+      return jsonResponse_({
+        status: 'success',
+        fileId: file.getId(),
+        fileName: file.getName(),
+        fileUrl: file.getUrl()
+      });
+    }
+
+    if (action === 'deleteFiles') {
+      const fileUrls = Array.isArray(payload.fileUrls)
+        ? payload.fileUrls
+        : (payload.fileUrl ? [payload.fileUrl] : []);
+      const res = trashDriveFilesByUrls_(fileUrls);
+      return jsonResponse_({
+        status: 'success',
+        trashedCount: res.trashedCount,
+        skippedCount: res.skippedCount,
+        results: res.results
+      });
+    }
+
+    lock.waitLock(20000);
+
+    if (action === 'reorganize') {
+      setupAllFormattedTabs();
+      const res = migrateLegacyDocumentsToTabs();
+      return jsonResponse_({ status: 'success', migrated: res.migrated });
+    }
+
+    if (action === 'insert') {
+      const record = payload.record || {};
+      const type = TAB_CONFIGS[record.type] ? record.type : 'incoming';
+      const sheet = getOrCreateTypedSheet_(ss, type);
+      const row = recordToSheetRow_(type, record);
+      sheet.appendRow(row);
+      return jsonResponse_({ status: 'success', id: record.id });
+    }
+
+    if (action === 'insertBatch') {
+      const records = Array.isArray(payload.records) ? payload.records : [];
+      if (records.length === 0) {
+        return jsonResponse_({ status: 'success', inserted: 0, skipped: 0 });
+      }
+
+      const existingIds = {};
+      readAllRecords_(ss).forEach(function (r) {
+        if (r.id !== undefined && r.id !== null && r.id !== '') {
+          existingIds[String(r.id)] = true;
+        }
+      });
+
+      const grouped = {};
+      let skipped = 0;
+
+      records.forEach(function (record) {
+        const idStr = String(record.id || '');
+        if (idStr && existingIds[idStr]) {
+          skipped++;
+          return;
+        }
+        if (idStr) existingIds[idStr] = true;
+        const type = TAB_CONFIGS[record.type] ? record.type : 'incoming';
+        if (!grouped[type]) grouped[type] = [];
+        grouped[type].push(record);
+      });
+
+      let inserted = 0;
+      Object.keys(grouped).forEach(function (typeKey) {
+        const sheet = getOrCreateTypedSheet_(ss, typeKey);
+        const rows = grouped[typeKey].map(function (r) {
+          return recordToSheetRow_(typeKey, r);
+        });
+        if (rows.length > 0) {
+          const startRow = sheet.getLastRow() + 1;
+          sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+          inserted += rows.length;
+        }
+      });
+
+      return jsonResponse_({ status: 'success', inserted: inserted, skipped: skipped });
+    }
+
+    if (action === 'update') {
+      const targetId = String(payload.id || '');
+      const updates = payload.updates || {};
+      const preferredType = payload.type || updates.type || '';
+      const found = findRecordAcrossTabs_(ss, targetId, preferredType);
+
+      if (!found) {
+        return jsonResponse_({ status: 'error', message: 'ไม่พบรายการเอกสาร ID: ' + targetId });
+      }
+
+      const merged = {};
+      CANONICAL_FIELDS.forEach(function (k) {
+        merged[k] = found.record[k] !== undefined ? found.record[k] : '';
+      });
+      Object.keys(updates).forEach(function (k) {
+        merged[k] = updates[k];
+      });
+
+      const nextType = TAB_CONFIGS[merged.type] ? merged.type : found.type;
+      if (nextType === found.type) {
+        const row = recordToSheetRow_(nextType, merged);
+        found.sheet.getRange(found.rowNumber, 1, 1, row.length).setValues([row]);
+      } else {
+        found.sheet.deleteRow(found.rowNumber);
+        const destSheet = getOrCreateTypedSheet_(ss, nextType);
+        destSheet.appendRow(recordToSheetRow_(nextType, merged));
+      }
+
+      let driveTrashResult = null;
+      if (payload.trashDriveFiles && Array.isArray(payload.removedFileUrls) && payload.removedFileUrls.length > 0) {
+        driveTrashResult = trashDriveFilesByUrls_(payload.removedFileUrls);
+      }
+
+      return jsonResponse_({
+        status: 'success',
+        id: targetId,
+        driveTrash: driveTrashResult
+      });
+    }
+
+    if (action === 'delete') {
+      const targetId = String(payload.id || '');
+      const preferredType = payload.type || '';
+      const found = findRecordAcrossTabs_(ss, targetId, preferredType);
+      if (!found) {
+        return jsonResponse_({ status: 'error', message: 'ไม่พบรายการเอกสาร ID: ' + targetId });
+      }
+
+      let driveTrashResult = null;
+      if (payload.trashDriveFiles) {
+        const urlsToTrash = Array.isArray(payload.fileUrls) && payload.fileUrls.length > 0
+          ? payload.fileUrls
+          : (found.record.file_url ? [found.record.file_url] : []);
+        if (urlsToTrash.length > 0) {
+          driveTrashResult = trashDriveFilesByUrls_(urlsToTrash);
+        }
+      }
+
+      found.sheet.deleteRow(found.rowNumber);
+      return jsonResponse_({
+        status: 'success',
+        deletedId: targetId,
+        driveTrash: driveTrashResult
+      });
+    }
+
+    return jsonResponse_({ status: 'error', message: 'Unsupported POST action: ' + action });
+  } catch (err) {
+    return jsonResponse_({ status: 'error', message: err && err.message ? err.message : String(err) });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (lockErr) {}
+  }
+}

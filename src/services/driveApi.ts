@@ -10,7 +10,7 @@ import {
 export const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbwAoTN_6vHyRBG7ffTjGDBmXU9rXFzedzFKL4ntSQ_umUyLsr1Hyw1DIHY82fMNeSyNCQ/exec';
 
-const LEGACY_DEFAULT_APPS_SCRIPT_URL =
+const SUPERSEDED_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
 
 const SCRIPT_URL_STORAGE_KEY = 'esaraban_apps_script_url_v1';
@@ -22,7 +22,7 @@ export function getConfiguredScriptUrl(): string {
     const saved = localStorage.getItem(SCRIPT_URL_STORAGE_KEY);
     if (saved && saved.trim()) {
       const trimmed = saved.trim();
-      if (trimmed === LEGACY_DEFAULT_APPS_SCRIPT_URL) {
+      if (trimmed === SUPERSEDED_SCRIPT_URL) {
         localStorage.removeItem(SCRIPT_URL_STORAGE_KEY);
         return DEFAULT_APPS_SCRIPT_URL;
       }
