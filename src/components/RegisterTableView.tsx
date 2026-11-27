@@ -195,7 +195,9 @@ export function RegisterTableView({
   const selectedYear =
     yearFilterByTab[tabId] !== undefined ? yearFilterByTab[tabId] : defaultYearForTab;
   const searchQuery = searchByTab[tabId] || '';
-  const sortState = sortByTab[tabId];
+  const defaultSortForTab: SortState | undefined =
+    tabId === 'allDocs' ? { field: 'date', direction: 'desc' } : undefined;
+  const sortState = sortByTab[tabId] ?? defaultSortForTab;
 
   const tabMeta = TAB_TITLES[tabId];
 
@@ -253,14 +255,10 @@ export function RegisterTableView({
       rows = [...rows].sort((a, b) => {
         const getVal = (doc: SarabanDoc) => {
           if (sortState.field === 'date') return getInboxDate(doc);
-          if (sortState.field === 'regNo' && tabId === 'myInbox') {
-            if (doc.type === 'outgoing' || doc.type === 'orders' || doc.type === 'memos') {
-              return doc.docNumber || '';
-            }
-            if (doc.type === 'vouchers') {
-              return doc.voucherNo || '';
-            }
-            return formatRegDisplay(doc);
+          if (sortState.field === 'regNo' && (tabId === 'myInbox' || tabId === 'allDocs')) {
+            const reg = formatRegDisplay(doc);
+            if (reg !== '-') return reg;
+            return doc.docNumber || doc.formCode || doc.voucherNo || '';
           }
           if (sortState.field === 'subject') {
             return doc.subject || doc.voucherProject || doc.formName || '';
@@ -269,11 +267,36 @@ export function RegisterTableView({
         };
         const x = getVal(a);
         const y = getVal(b);
+
+        if (
+          sortState.field === 'date' ||
+          sortState.field === 'voucherDate' ||
+          sortState.field === 'dueDate'
+        ) {
+          const tsA = getInboxDateSortValue(String(x || ''));
+          const tsB = getInboxDateSortValue(String(y || ''));
+          if (tsA === 0 && tsB !== 0) return 1;
+          if (tsB === 0 && tsA !== 0) return -1;
+          const dateCmp = tsA - tsB;
+          if (dateCmp !== 0) {
+            return sortState.direction === 'asc' ? dateCmp : -dateCmp;
+          }
+          const idDiff = (Number(a.id) || 0) - (Number(b.id) || 0);
+          return sortState.direction === 'asc' ? idDiff : -idDiff;
+        }
+
         const cmp =
           sortState.field === 'voucherAmount'
             ? Number(x || 0) - Number(y || 0)
             : String(x).localeCompare(String(y), 'th', { numeric: true, sensitivity: 'base' });
-        return sortState.direction === 'asc' ? cmp : -cmp;
+        if (cmp !== 0) {
+          return sortState.direction === 'asc' ? cmp : -cmp;
+        }
+        // Tie-breaker: keep newer dates first
+        const dateFallback =
+          getInboxDateSortValue(getInboxDate(b)) - getInboxDateSortValue(getInboxDate(a));
+        if (dateFallback !== 0) return dateFallback;
+        return (Number(b.id) || 0) - (Number(a.id) || 0);
       });
     } else {
       rows = [...rows];
@@ -291,7 +314,7 @@ export function RegisterTableView({
         rows.sort(
           (a, b) => getInboxDateSortValue(b.voucherDate) - getInboxDateSortValue(a.voucherDate)
         );
-      } else if (tabId === 'myInbox') {
+      } else if (tabId === 'myInbox' || tabId === 'allDocs') {
         rows.sort(
           (a, b) =>
             getInboxDateSortValue(getInboxDate(b)) - getInboxDateSortValue(getInboxDate(a))
@@ -313,20 +336,26 @@ export function RegisterTableView({
 
   const toggleSort = (field: string) => {
     setSortByTab((prev) => {
-      const current = prev[tabId];
+      const current = prev[tabId] ?? defaultSortForTab;
       const direction =
         current?.field === field && current.direction === 'asc' ? 'desc' : 'asc';
       return { ...prev, [tabId]: { field, direction } };
     });
   };
 
-  const renderSortHeader = (label: string, field: string, align: 'left' | 'center' | 'right' = 'left') => {
+  const renderSortHeader = (
+    label: string,
+    field: string,
+    align: 'left' | 'center' | 'right' = 'left',
+    extraClass = ''
+  ) => {
     const active = sortState?.field === field;
     const alignClass =
       align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start';
+    const paddingClass = /\bpx-/.test(extraClass) ? 'py-3.5' : 'p-3.5';
     return (
       <th
-        className={`p-3.5 sticky top-0 z-20 border-b transition-colors ${
+        className={`${paddingClass} sticky top-0 z-20 border-b transition-colors ${extraClass} ${
           tabId === 'overdue'
             ? active
               ? 'bg-[#FEE2E2] text-[#7F1D1D] border-[#FCA5A5]'
@@ -537,7 +566,7 @@ export function RegisterTableView({
     memos: 6,
     forms: 5,
     vouchers: 7,
-    allDocs: 7,
+    allDocs: 8,
     overdue: 7,
   };
 
@@ -750,7 +779,11 @@ export function RegisterTableView({
 
         {/* Table Container */}
         <div className="flex-1 min-h-0 overflow-auto saraban-scroll">
-          <table className="w-full min-w-[960px] text-left border-collapse">
+          <table
+            className={`w-full text-left border-collapse ${
+              tabId === 'allDocs' ? 'min-w-[900px]' : 'min-w-[960px]'
+            }`}
+          >
             <thead>
               {tabId === 'myInbox' && (
                 <tr>
@@ -860,15 +893,16 @@ export function RegisterTableView({
 
               {tabId === 'allDocs' && (
                 <tr>
-                  {renderSortHeader('ประเภท', 'type')}
-                  {renderSortHeader('ปี', 'yearStr', 'center')}
-                  {renderSortHeader('เลขทะเบียน / เลขที่', 'regNo')}
-                  {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject')}
-                  {renderSortHeader('สถานะ', 'status', 'center')}
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
+                  {renderSortHeader('ประเภท', 'type', 'center', 'w-[112px] px-2.5 whitespace-nowrap')}
+                  {renderSortHeader('ปี', 'yearStr', 'center', 'w-[60px] px-2 whitespace-nowrap')}
+                  {renderSortHeader('เลขทะเบียน / เลขที่', 'regNo', 'left', 'w-[148px] px-3 whitespace-nowrap')}
+                  {renderSortHeader('วันที่', 'date', 'center', 'w-[96px] px-2.5 whitespace-nowrap')}
+                  {renderSortHeader('เรื่อง / ผู้เกี่ยวข้อง', 'subject', 'left', 'min-w-[260px] px-3')}
+                  {renderSortHeader('สถานะ', 'status', 'center', 'w-[128px] px-2.5 whitespace-nowrap')}
+                  <th className="w-[96px] px-2.5 py-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold whitespace-nowrap">
                     ไฟล์แนบ
                   </th>
-                  <th className="p-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold">
+                  <th className="w-[108px] px-2.5 py-3.5 text-center sticky top-0 z-20 bg-[#F6F4FA] text-[#242038] border-b border-[#E5E2F0] text-xs font-semibold whitespace-nowrap">
                     จัดการ
                   </th>
                 </tr>
@@ -1256,26 +1290,31 @@ export function RegisterTableView({
                       onClick={() => onSelectDoc(d.id)}
                       className={rowClass}
                     >
-                      <td className="p-3.5">
+                      <td className="px-2.5 py-3 text-center whitespace-nowrap">
                         <DocTypeBadge type={d.type} />
                       </td>
-                      <td className="p-3.5 text-center font-bold text-slate-700 tabular-nums">
+                      <td className="px-2 py-3 text-center font-bold text-slate-700 tabular-nums whitespace-nowrap">
                         {d.yearStr || '-'}
                       </td>
-                      <td className="p-3.5 font-bold text-[#574F7D] tabular-nums">
-                        {formatRegDisplay(d)}{' '}
-                        <span className="font-normal text-xs text-slate-500">
-                          ({d.docNumber || d.formCode || d.voucherNo || '-'})
-                        </span>
+                      <td className="px-3 py-3 text-xs align-middle">
+                        <div className="font-bold text-sm text-[#574F7D] tabular-nums whitespace-nowrap">
+                          {formatRegDisplay(d)}
+                        </div>
+                        <div className="text-[11px] text-slate-500 tabular-nums mt-0.5 break-all max-w-[140px]">
+                          {d.docNumber || d.formCode || d.voucherNo || '-'}
+                        </div>
                       </td>
-                      <td className="p-3.5 max-w-md">
-                        <div className="font-semibold text-slate-900">
+                      <td className="px-2.5 py-3 text-center whitespace-nowrap text-xs text-slate-700 tabular-nums">
+                        {formatThaiDate(getInboxDate(d))}
+                      </td>
+                      <td className="px-3 py-3 min-w-[260px]">
+                        <div className="font-semibold text-slate-900 leading-snug">
                           {d.subject || d.formName || d.voucherProject || '-'}
                         </div>
-                        <div className="text-xs text-slate-500">{getPartyLabel(d)}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{getPartyLabel(d)}</div>
                         {renderProjectSyncTag(d)}
                       </td>
-                      <td className="p-3.5 text-center">
+                      <td className="px-2.5 py-3 text-center whitespace-nowrap">
                         <div className="inline-flex flex-col items-center gap-1">
                           <StatusHighlightBadge status={d.status} />
                           {d.ackStatus === 'รับทราบแล้ว' && d.ackTime && d.ackTime !== '-' && (
