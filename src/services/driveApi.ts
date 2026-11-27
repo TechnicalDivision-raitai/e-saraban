@@ -8,6 +8,9 @@ import {
 } from '../utils/sarabanUtils';
 
 export const DEFAULT_APPS_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbwAoTN_6vHyRBG7ffTjGDBmXU9rXFzedzFKL4ntSQ_umUyLsr1Hyw1DIHY82fMNeSyNCQ/exec';
+
+const LEGACY_DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
 
 const SCRIPT_URL_STORAGE_KEY = 'esaraban_apps_script_url_v1';
@@ -17,7 +20,14 @@ const DOCS_BACKUP_KEY = 'esaraban_docs_backup_v1';
 export function getConfiguredScriptUrl(): string {
   try {
     const saved = localStorage.getItem(SCRIPT_URL_STORAGE_KEY);
-    if (saved && saved.trim()) return saved.trim();
+    if (saved && saved.trim()) {
+      const trimmed = saved.trim();
+      if (trimmed === LEGACY_DEFAULT_APPS_SCRIPT_URL) {
+        localStorage.removeItem(SCRIPT_URL_STORAGE_KEY);
+        return DEFAULT_APPS_SCRIPT_URL;
+      }
+      return trimmed;
+    }
   } catch {}
   return DEFAULT_APPS_SCRIPT_URL;
 }
@@ -319,7 +329,10 @@ export async function deleteFilesInDrive(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('Unsupported POST action')) {
+    if (
+      msg.includes('Unsupported POST action') ||
+      msg.includes('Unknown POST action')
+    ) {
       return { supported: false, trashedCount: 0, skippedCount: 0 };
     }
     throw err;

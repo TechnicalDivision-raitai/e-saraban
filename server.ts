@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_GOOGLE_DRIVE_SCRIPT_URL =
   process.env.APPS_SCRIPT_URL ||
-  'https://script.google.com/macros/s/AKfycbz_8BWpjt04SLRb0cBx60vkXp1RGT7QVfo7ZQkfW5YrKccQTiGRtf98BGDNv2NZlvqs/exec';
+  'https://script.google.com/macros/s/AKfycbwAoTN_6vHyRBG7ffTjGDBmXU9rXFzedzFKL4ntSQ_umUyLsr1Hyw1DIHY82fMNeSyNCQ/exec';
 
 function resolveSafeScriptUrl(candidate: unknown): string {
   if (typeof candidate === 'string' && candidate.trim()) {
